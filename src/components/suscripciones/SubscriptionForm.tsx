@@ -2,8 +2,16 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveSubscription, type ActionState } from "@/lib/actions";
-import { todayISO } from "@/lib/format";
-import { CURRENCIES, PRODUCTS_BY_PROVIDER, SUB_PLANS, SUB_STATUS, type Option, type Provider, type Subscription } from "@/lib/types";
+import { addYearsISO, todayISO } from "@/lib/format";
+import { ACCOUNT_TERMS, CURRENCIES, PRODUCTS_BY_PROVIDER, SUB_PLANS, SUB_STATUS, type Option, type Provider, type Subscription } from "@/lib/types";
+
+const TERM_KEYS = Object.keys(ACCOUNT_TERMS);
+
+/** Devuelve la vigencia (en años) si la renovación es exactamente compra + N años; si no, "". */
+function termFor(purchasedAt: string, renewsAt: string): string {
+  if (!purchasedAt || !renewsAt) return "";
+  return TERM_KEYS.find((k) => addYearsISO(purchasedAt, Number(k)) === renewsAt) ?? "";
+}
 import { Button } from "@/components/ui/Button";
 import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
@@ -25,6 +33,13 @@ export function SubscriptionForm({
   const [accountId, setAccountId] = useState(sub?.account_id ?? accounts[0]?.value ?? "");
   const [plan, setPlan] = useState<string>(sub?.plan ?? "individual");
   const [status, setStatus] = useState<string>(sub?.status ?? "active");
+  const [purchasedAt, setPurchasedAt] = useState<string>(sub?.purchased_at ?? todayISO());
+  const [renewsAt, setRenewsAt] = useState<string>(sub?.renews_at ?? "");
+  const [term, setTerm] = useState<string>(() => termFor(sub?.purchased_at ?? "", sub?.renews_at ?? ""));
+  const applyTerm = (t: string, from: string) => {
+    setTerm(t);
+    if (t && from) setRenewsAt(addYearsISO(from, Number(t)));
+  };
   useEffect(() => {
     if (state?.ok) onDone();
   }, [state, onDone]);
@@ -101,15 +116,42 @@ export function SubscriptionForm({
         />
       </Field>
 
+      <Field label="Puestos / usuarios" error={e.seats}>
+        <Input name="seats" type="number" min={1} defaultValue={sub?.seats ?? 1} />
+      </Field>
+
       <div className="grid gap-4 sm:grid-cols-3">
-        <Field label="Puestos / usuarios" error={e.seats}>
-          <Input name="seats" type="number" min={1} defaultValue={sub?.seats ?? 1} />
-        </Field>
         <Field label="Fecha de compra" error={e.purchased_at}>
-          <Input name="purchased_at" type="date" defaultValue={sub?.purchased_at ?? todayISO()} />
+          <Input
+            name="purchased_at"
+            type="date"
+            value={purchasedAt}
+            onChange={(ev) => {
+              setPurchasedAt(ev.target.value);
+              if (term) applyTerm(term, ev.target.value);
+            }}
+          />
+        </Field>
+        <Field label="Vigencia" hint="Calcula la renovación desde la fecha de compra.">
+          <Select name="term_years" value={term} onChange={(ev) => applyTerm(ev.target.value, purchasedAt)}>
+            <option value="">Manual</option>
+            {Object.entries(ACCOUNT_TERMS).map(([k, v]) => (
+              <option key={k} value={k}>
+                {v}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Fecha de renovación" error={e.renews_at}>
-          <Input name="renews_at" type="date" defaultValue={sub?.renews_at ?? ""} />
+          <Input
+            name="renews_at"
+            type="date"
+            value={renewsAt}
+            onChange={(ev) => {
+              setRenewsAt(ev.target.value);
+              setTerm(termFor(purchasedAt, ev.target.value));
+            }}
+          />
         </Field>
       </div>
 
