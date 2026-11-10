@@ -41,7 +41,14 @@ if (!url) {
 // Supabase exige TLS; para un Postgres local sin TLS exporta PGSSLMODE=disable.
 const ssl = process.env.PGSSLMODE === "disable" ? false : { rejectUnauthorized: false };
 const client = new pg.Client({ connectionString: url, ssl });
-await client.connect();
+try {
+  await client.connect();
+} catch (err) {
+  // No detenemos el despliegue: la app avisa dentro con un banner qué migraciones faltan.
+  console.warn(`[migrate] No se pudo conectar a la base de datos (${err.message}).`);
+  console.warn("[migrate] Revisa DATABASE_URL: usa la URI del Session pooler de Supabase con la contraseña correcta. El despliegue continúa sin migrar.");
+  process.exit(0);
+}
 
 try {
   await client.query("select pg_advisory_lock($1)", [LOCK_KEY]);

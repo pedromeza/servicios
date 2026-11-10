@@ -44,7 +44,8 @@ Desde entonces, cada `npm run build` (y por tanto cada despliegue en Vercel) eje
 
 - crea la tabla `schema_migrations` la primera vez y registra las migraciones que ya aplicaste a mano, sin volver a correrlas;
 - aplica, en orden y cada una dentro de una transacción, solo los archivos nuevos de `supabase/migrations/`;
-- si una falla, la revierte y el despliegue se detiene con el error en el log, para que la versión anterior siga en línea.
+- si una falla, la revierte y el despliegue se detiene con el error en el log, para que la versión anterior siga en línea;
+- si no logra conectar (URI o contraseña incorrectas), solo avisa en el log y el despliegue continúa; dentro de la app verás un aviso amarillo con las migraciones pendientes.
 
 También puedes lanzarlo a mano con `npm run migrate`. Sin `DATABASE_URL` el script solo avisa y no hace nada.
 
