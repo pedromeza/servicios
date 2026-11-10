@@ -28,10 +28,25 @@ Stack: Next.js 16 · Supabase (Postgres + Auth) · Resend · Vercel. Todo cabe e
 ### 1. Supabase (base de datos y login)
 
 1. Crea un proyecto gratuito en <https://supabase.com>.
-2. Abre **SQL Editor → New query**, pega el contenido de [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) y ejecútalo. Después ejecuta, en orden, los demás archivos de `supabase/migrations/` (`0002_subscription_email.sql`, `0003_account_term.sql`, `0004_subscription_promo.sql`, `0005_license_kind_term_seats.sql`…). Si ya tenías el proyecto creado, solo te falta ejecutar los nuevos.
+2. Abre **SQL Editor → New query**, pega el contenido de [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) y ejecútalo. Las migraciones posteriores (`0002…`, `0003…`) se aplican solas en cada despliegue si configuras `DATABASE_URL` (ver *Migraciones automáticas* más abajo); si no, ejecútalas a mano en orden.
 3. **Authentication → Sign In / Providers → Email**: desactiva *Allow new users to sign up*. (Opcional: desactiva *Confirm email* para no depender del correo de confirmación.)
 4. **Authentication → Users → Add user → Create new user**: tu correo y una contraseña larga. Marca *Auto Confirm User*.
 5. **Project Settings → API**: copia `Project URL`, la llave `anon`/`publishable` y la llave `service_role` (esta última es secreta).
+
+### 1b. Migraciones automáticas (recomendado)
+
+Para no tener que pegar SQL cada vez que el esquema cambia:
+
+1. En Supabase pulsa **Connect** (arriba), elige **Session pooler** y copia la URI. Sustituye `[YOUR-PASSWORD]` por la contraseña de la base de datos (la que pusiste al crear el proyecto; se puede restablecer en **Project Settings → Database**).
+2. Guárdala como `DATABASE_URL` en Vercel (**Settings → Environment Variables**) y en tu `.env.local`.
+
+Desde entonces, cada `npm run build` (y por tanto cada despliegue en Vercel) ejecuta `scripts/migrate.mjs`, que:
+
+- crea la tabla `schema_migrations` la primera vez y registra las migraciones que ya aplicaste a mano, sin volver a correrlas;
+- aplica, en orden y cada una dentro de una transacción, solo los archivos nuevos de `supabase/migrations/`;
+- si una falla, la revierte y el despliegue se detiene con el error en el log, para que la versión anterior siga en línea.
+
+También puedes lanzarlo a mano con `npm run migrate`. Sin `DATABASE_URL` el script solo avisa y no hace nada.
 
 ### 2. Llave de cifrado
 
@@ -99,7 +114,8 @@ src/
     auth.ts                requireUser(): sesión + lista de correos permitidos
     supabase/server.ts     clientes de Supabase (sesión y servicio)
   proxy.ts                 refresca la sesión y protege rutas
-supabase/migrations/       esquema SQL con políticas RLS
+supabase/migrations/       esquema SQL con políticas RLS (se aplican solas en cada despliegue, ver 1b)
+scripts/migrate.mjs        aplica las migraciones pendientes antes de `next build`
 ```
 
 ## Comandos
