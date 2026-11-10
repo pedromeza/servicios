@@ -4,7 +4,9 @@ import { ChevronRight, KeyRound, Pencil, Plus, ShieldCheck, Trash2 } from "lucid
 import Link from "next/link";
 import { useCallback, useState, useTransition } from "react";
 import { deleteAccount } from "@/lib/actions";
-import { ACCOUNT_ROLES, PROVIDERS, type Account, type Option } from "@/lib/types";
+import { daysUntil, fmtDate } from "@/lib/format";
+import { renewalTone } from "@/lib/renewal";
+import { ACCOUNT_ROLES, ACCOUNT_TERMS, PROVIDERS, type Account, type Option } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
@@ -101,7 +103,20 @@ export function AccountsManager({
                       </div>
                     )}
                   </Td>
-                  <Td>{a.client_name ?? <span className="text-slate-400">Propia</span>}</Td>
+                  <Td>
+                    {a.client_name ?? <span className="text-slate-400">Propia</span>}
+                    {!a.client_id && a.term_years && (
+                      <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-slate-400">
+                        <span>{ACCOUNT_TERMS[a.term_years]}</span>
+                        {a.expires_at && (
+                          <>
+                            <span>· vence {fmtDate(a.expires_at)}</span>
+                            <Badge tone={renewalTone(daysUntil(a.expires_at)).tone}>{renewalTone(daysUntil(a.expires_at)).label}</Badge>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </Td>
                   <Td>{a.subscriptions_count}</Td>
                   <Td>
                     <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">

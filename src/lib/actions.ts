@@ -121,6 +121,8 @@ const accountSchema = z.object({
   role: z.enum(["admin", "user"]),
   parent_account_id: uuidOrNull,
   client_id: uuidOrNull,
+  contracted_at: dateField,
+  term_years: z.enum(["1", "2", "3"], "Elige 1, 2 o 3 años").nullable(),
   notes: z.string().max(2000),
 });
 
@@ -134,6 +136,8 @@ export async function saveAccount(_prev: ActionState, fd: FormData): Promise<Act
     role: str(fd, "role") || "user",
     parent_account_id: orNull(str(fd, "parent_account_id")),
     client_id: orNull(str(fd, "client_id")),
+    contracted_at: orNull(str(fd, "contracted_at")),
+    term_years: orNull(str(fd, "term_years")),
     notes: str(fd, "notes"),
   });
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
@@ -149,6 +153,9 @@ export async function saveAccount(_prev: ActionState, fd: FormData): Promise<Act
     role: d.role,
     parent_account_id: d.role === "admin" ? null : d.parent_account_id,
     client_id: d.client_id,
+    // La vigencia solo aplica a cuentas propias (sin cliente asignado).
+    contracted_at: d.client_id ? null : d.contracted_at,
+    term_years: d.client_id ? null : d.term_years ? Number(d.term_years) : null,
     notes_enc: encrypt(d.notes),
   };
   // Al editar, dejar la contraseña vacía conserva la actual.

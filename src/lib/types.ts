@@ -59,6 +59,9 @@ export type LicenseStatus = keyof typeof LICENSE_STATUS;
 
 export const CURRENCIES = ["MXN", "USD"] as const;
 
+export const ACCOUNT_TERMS = { 1: "1 año", 2: "2 años", 3: "3 años" } as const;
+export type AccountTerm = keyof typeof ACCOUNT_TERMS;
+
 export type Option = { value: string; label: string; meta?: string };
 
 export type Client = {
@@ -83,6 +86,9 @@ export type Account = {
   parent_label: string | null;
   client_id: string | null;
   client_name: string | null;
+  contracted_at: string | null;
+  term_years: AccountTerm | null;
+  expires_at: string | null;
   notes: string | null;
   created_at: string;
   subscriptions_count: number;

@@ -2,7 +2,7 @@ import "server-only";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { decrypt } from "./crypto";
 import { requireUser } from "./auth";
-import { daysUntil } from "./format";
+import { addYearsISO, daysUntil } from "./format";
 import type {
   Account,
   AuditEntry,
@@ -82,6 +82,9 @@ async function loadAccounts(): Promise<Account[]> {
     parent_label: r.parent_account_id ? (labelById.get(r.parent_account_id) ?? null) : null,
     client_id: r.client_id,
     client_name: r.client?.name ?? null,
+    contracted_at: r.contracted_at ?? null,
+    term_years: r.term_years ?? null,
+    expires_at: r.contracted_at && r.term_years ? addYearsISO(r.contracted_at, r.term_years) : null,
     notes: decrypt(r.notes_enc),
     created_at: r.created_at,
     subscriptions_count: (subs.data ?? []).filter((s: any) => s.account_id === r.id).length,

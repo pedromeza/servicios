@@ -3,7 +3,8 @@
 import { Eye, EyeOff } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
 import { saveAccount, type ActionState } from "@/lib/actions";
-import { ACCOUNT_ROLES, PROVIDERS, type Account, type Option } from "@/lib/types";
+import { addYearsISO, fmtDate, todayISO } from "@/lib/format";
+import { ACCOUNT_ROLES, ACCOUNT_TERMS, PROVIDERS, type Account, type Option } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
@@ -23,7 +24,12 @@ export function AccountForm({
 }) {
   const [state, action] = useActionState<ActionState, FormData>(saveAccount, null);
   const [role, setRole] = useState<string>(account?.role ?? "user");
+  const [clientId, setClientId] = useState<string>(account?.client_id ?? "");
+  const [contractedAt, setContractedAt] = useState<string>(account?.contracted_at ?? "");
+  const [termYears, setTermYears] = useState<string>(account?.term_years ? String(account.term_years) : "");
   const [show, setShow] = useState(false);
+  const isOwn = clientId === "";
+  const expiresAt = contractedAt && termYears ? addYearsISO(contractedAt, Number(termYears)) : null;
   useEffect(() => {
     if (state?.ok) onDone();
   }, [state, onDone]);
@@ -92,7 +98,7 @@ export function AccountForm({
           </Field>
         )}
         <Field label="Cliente asignado" error={e.client_id}>
-          <Select name="client_id" defaultValue={account?.client_id ?? ""}>
+          <Select name="client_id" value={clientId} onChange={(ev) => setClientId(ev.target.value)}>
             <option value="">Sin asignar (propia)</option>
             {clients.map((c) => (
               <option key={c.value} value={c.value}>
@@ -102,6 +108,35 @@ export function AccountForm({
           </Select>
         </Field>
       </div>
+
+      {isOwn && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Fecha de contratación" error={e.contracted_at}>
+            <Input name="contracted_at" type="date" value={contractedAt} onChange={(ev) => setContractedAt(ev.target.value)} />
+          </Field>
+          <Field
+            label="Vigencia"
+            error={e.term_years}
+            hint={expiresAt ? `Vence el ${fmtDate(expiresAt)}.` : "Por cuánto tiempo contrataste esta cuenta."}
+          >
+            <Select
+              name="term_years"
+              value={termYears}
+              onChange={(ev) => {
+                setTermYears(ev.target.value);
+                if (ev.target.value && !contractedAt) setContractedAt(todayISO());
+              }}
+            >
+              <option value="">Sin definir</option>
+              {Object.entries(ACCOUNT_TERMS).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      )}
 
       <Field label="Notas" error={e.notes} hint="Correo de recuperación, preguntas de seguridad, etc. Se guardan cifradas.">
         <Textarea name="notes" defaultValue={account?.notes ?? ""} />

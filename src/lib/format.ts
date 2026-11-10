@@ -16,6 +16,12 @@ export function addDaysISO(iso: string, days: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+export function addYearsISO(iso: string, years: number): string {
+  const d = parseDate(iso);
+  d.setFullYear(d.getFullYear() + years);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function daysUntil(d: string | null): number | null {
   if (!d) return null;
   const today = new Date();
