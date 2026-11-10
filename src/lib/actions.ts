@@ -175,6 +175,7 @@ const subscriptionSchema = z.object({
   id: z.uuid().nullable(),
   account_id: z.uuid("Elige la cuenta"),
   client_id: uuidOrNull,
+  email: z.email("Correo inválido").max(200).or(z.literal("")),
   plan: z.enum(["individual", "suite"]),
   products: z.array(z.string().min(1).max(80)).min(1, "Marca al menos un programa"),
   seats: z.coerce.number().int("Debe ser entero").min(1, "Mínimo 1"),
@@ -199,6 +200,7 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
     id: orNull(str(fd, "id")),
     account_id: str(fd, "account_id"),
     client_id: orNull(str(fd, "client_id")),
+    email: str(fd, "email").toLowerCase(),
     plan: str(fd, "plan") || "individual",
     products,
     seats: str(fd, "seats") || "1",
@@ -216,6 +218,7 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
   const payload = {
     account_id: d.account_id,
     client_id: d.client_id,
+    email_enc: encrypt(d.email),
     plan: d.plan,
     products: d.products,
     seats: d.seats,

@@ -96,6 +96,7 @@ export type Subscription = {
   account_provider: string;
   client_id: string | null;
   client_name: string | null;
+  email: string | null;
   plan: SubPlan;
   products: string[];
   seats: number;

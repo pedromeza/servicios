@@ -62,6 +62,10 @@ export function SubscriptionForm({
         </Field>
       </div>
 
+      <Field label="Correo de la suscripción" error={e.email} hint="Usuario al que está asignado el puesto. Se guarda cifrado.">
+        <Input name="email" type="email" inputMode="email" autoComplete="off" defaultValue={sub?.email ?? ""} placeholder="usuario@correo.com" />
+      </Field>
+
       <Field label="Alcance" error={e.plan}>
         <div className="grid grid-cols-2 gap-2">
           {Object.entries(SUB_PLANS).map(([k, v]) => (

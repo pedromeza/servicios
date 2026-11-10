@@ -95,7 +95,10 @@ export default async function CuentaDetallePage({ params }: PageProps<"/cuentas/
                             {SUB_PLANS[s.plan]} · {s.seats} puesto{s.seats === 1 ? "" : "s"}
                           </div>
                         </Td>
-                        <Td>{s.client_name ?? "—"}</Td>
+                        <Td>
+                          <div>{s.client_name ?? "—"}</div>
+                          {s.email && <div className="text-xs text-slate-400">{s.email}</div>}
+                        </Td>
                         <Td>
                           <div>{fmtDate(s.renews_at)}</div>
                           {s.status === "active" && <Badge tone={t.tone}>{t.label}</Badge>}

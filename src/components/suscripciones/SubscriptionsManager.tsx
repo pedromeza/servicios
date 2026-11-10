@@ -55,7 +55,7 @@ export function SubscriptionsManager({
         }
       />
       <FilterBar
-        placeholder="Buscar por cliente, cuenta o programa…"
+        placeholder="Buscar por cliente, correo, cuenta o programa…"
         filters={[{ name: "status", label: "Estado", options: Object.entries(SUB_STATUS).map(([k, v]) => ({ value: k, label: v })) }]}
       />
       <Card>
@@ -90,7 +90,10 @@ export function SubscriptionsManager({
                 const t = renewalTone(days);
                 return (
                   <tr key={s.id} className="group hover:bg-navy-50/60">
-                    <Td className="font-medium text-navy-900">{s.client_name ?? <span className="font-normal text-slate-400">—</span>}</Td>
+                    <Td>
+                      <div className="font-medium text-navy-900">{s.client_name ?? <span className="font-normal text-slate-400">—</span>}</div>
+                      {s.email && <div className="text-xs text-slate-400">{s.email}</div>}
+                    </Td>
                     <Td>
                       <div className="text-slate-800">{s.account_label}</div>
                       <div className="text-xs text-slate-400">{s.account_provider}</div>

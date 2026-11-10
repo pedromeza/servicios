@@ -133,6 +133,7 @@ export async function listSubscriptions(filters: { q?: string; status?: string }
       account_provider: r.account?.provider ?? "",
       client_id: r.client_id,
       client_name: r.client?.name ?? null,
+      email: decrypt(r.email_enc),
       plan: r.plan,
       products: r.products ?? [],
       seats: r.seats,
@@ -148,7 +149,7 @@ export async function listSubscriptions(filters: { q?: string; status?: string }
     .filter(
       (s) =>
         (!filters.status || s.status === filters.status) &&
-        matches(filters.q ?? "", [s.account_label, s.client_name, s.products.join(" "), s.notes, s.account_provider]),
+        matches(filters.q ?? "", [s.account_label, s.client_name, s.email, s.products.join(" "), s.notes, s.account_provider]),
     );
 }
 
