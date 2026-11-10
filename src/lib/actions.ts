@@ -191,6 +191,7 @@ const subscriptionSchema = z.object({
   price: z.coerce.number().min(0, "No puede ser negativo"),
   currency: z.enum(["MXN", "USD"]),
   renews_at: dateField,
+  promo_months: z.coerce.number().int("Debe ser entero").min(0, "No puede ser negativo").max(24, "Máximo 24 meses"),
   status: z.enum(["active", "expired", "cancelled"]),
   notes: z.string().max(2000),
 });
@@ -216,6 +217,7 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
     price: str(fd, "price") || "0",
     currency: str(fd, "currency") || "MXN",
     renews_at: orNull(str(fd, "renews_at")),
+    promo_months: str(fd, "promo_months") || "0",
     status: str(fd, "status") || "active",
     notes: str(fd, "notes"),
   });
@@ -234,6 +236,7 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
     price: d.price,
     currency: d.currency,
     renews_at: d.renews_at,
+    promo_months: d.promo_months,
     status: d.status,
     notes_enc: encrypt(d.notes),
   };

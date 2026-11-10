@@ -145,6 +145,7 @@ export async function listSubscriptions(filters: { q?: string; status?: string }
       price: Number(r.price),
       currency: r.currency,
       renews_at: r.renews_at,
+      promo_months: Number(r.promo_months ?? 0),
       status: r.status,
       notes: decrypt(r.notes_enc),
       created_at: r.created_at,

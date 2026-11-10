@@ -22,6 +22,17 @@ export function addYearsISO(iso: string, years: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** Suma meses conservando el día; si el mes destino es más corto, usa su último día. */
+export function addMonthsISO(iso: string, months: number): string {
+  const d = parseDate(iso);
+  const day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  d.setDate(Math.min(day, last));
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 export function daysUntil(d: string | null): number | null {
   if (!d) return null;
   const today = new Date();

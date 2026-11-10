@@ -107,6 +107,11 @@ export function SubscriptionsManager({
                     <Td className="whitespace-nowrap">{fmtDate(s.purchased_at)}</Td>
                     <Td>
                       <div className="whitespace-nowrap text-slate-800">{fmtDate(s.renews_at)}</div>
+                      {s.promo_months > 0 && (
+                        <div className="text-xs text-emerald-600">
+                          +{s.promo_months} mes{s.promo_months === 1 ? "" : "es"} gratis
+                        </div>
+                      )}
                       {s.status === "active" && (
                         <Badge tone={t.tone} className="mt-1">
                           {days !== null && days <= 7 && <AlertTriangle size={11} />}

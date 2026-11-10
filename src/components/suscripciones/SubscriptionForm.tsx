@@ -2,16 +2,23 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveSubscription, type ActionState } from "@/lib/actions";
-import { addYearsISO, todayISO } from "@/lib/format";
+import { addMonthsISO, addYearsISO, todayISO } from "@/lib/format";
 import { ACCOUNT_TERMS, CURRENCIES, PRODUCTS_BY_PROVIDER, SUB_PLANS, SUB_STATUS, type Option, type Provider, type Subscription } from "@/lib/types";
 
 const TERM_KEYS = Object.keys(ACCOUNT_TERMS);
 
-/** Devuelve la vigencia (en años) si la renovación es exactamente compra + N años; si no, "". */
-function termFor(purchasedAt: string, renewsAt: string): string {
-  if (!purchasedAt || !renewsAt) return "";
-  return TERM_KEYS.find((k) => addYearsISO(purchasedAt, Number(k)) === renewsAt) ?? "";
+/** Renovación = compra + vigencia en años + meses gratis de promoción. */
+function renewalFor(purchasedAt: string, years: number, promoMonths: number): string {
+  return addMonthsISO(addYearsISO(purchasedAt, years), promoMonths);
 }
+
+/** Devuelve la vigencia (en años) si la renovación coincide con compra + N años + promo; si no, "". */
+function termFor(purchasedAt: string, renewsAt: string, promoMonths: number): string {
+  if (!purchasedAt || !renewsAt) return "";
+  return TERM_KEYS.find((k) => renewalFor(purchasedAt, Number(k), promoMonths) === renewsAt) ?? "";
+}
+
+const toMonths = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
 import { Button } from "@/components/ui/Button";
 import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
@@ -35,10 +42,11 @@ export function SubscriptionForm({
   const [status, setStatus] = useState<string>(sub?.status ?? "active");
   const [purchasedAt, setPurchasedAt] = useState<string>(sub?.purchased_at ?? todayISO());
   const [renewsAt, setRenewsAt] = useState<string>(sub?.renews_at ?? "");
-  const [term, setTerm] = useState<string>(() => termFor(sub?.purchased_at ?? "", sub?.renews_at ?? ""));
-  const applyTerm = (t: string, from: string) => {
+  const [promo, setPromo] = useState<string>(sub?.promo_months ? String(sub.promo_months) : "");
+  const [term, setTerm] = useState<string>(() => termFor(sub?.purchased_at ?? "", sub?.renews_at ?? "", sub?.promo_months ?? 0));
+  const applyTerm = (t: string, from: string, promoMonths: number) => {
     setTerm(t);
-    if (t && from) setRenewsAt(addYearsISO(from, Number(t)));
+    if (t && from) setRenewsAt(renewalFor(from, Number(t), promoMonths));
   };
   useEffect(() => {
     if (state?.ok) onDone();
@@ -128,12 +136,12 @@ export function SubscriptionForm({
             value={purchasedAt}
             onChange={(ev) => {
               setPurchasedAt(ev.target.value);
-              if (term) applyTerm(term, ev.target.value);
+              if (term) applyTerm(term, ev.target.value, toMonths(promo));
             }}
           />
         </Field>
         <Field label="Vigencia" hint="Calcula la renovación desde la fecha de compra.">
-          <Select name="term_years" value={term} onChange={(ev) => applyTerm(ev.target.value, purchasedAt)}>
+          <Select name="term_years" value={term} onChange={(ev) => applyTerm(ev.target.value, purchasedAt, toMonths(promo))}>
             <option value="">Manual</option>
             {Object.entries(ACCOUNT_TERMS).map(([k, v]) => (
               <option key={k} value={k}>
@@ -149,11 +157,28 @@ export function SubscriptionForm({
             value={renewsAt}
             onChange={(ev) => {
               setRenewsAt(ev.target.value);
-              setTerm(termFor(purchasedAt, ev.target.value));
+              setTerm(termFor(purchasedAt, ev.target.value, toMonths(promo)));
             }}
           />
         </Field>
       </div>
+
+      <Field label="Meses gratis de promoción" error={e.promo_months} hint="Se suman a la vigencia al calcular la renovación. Deja 0 si no aplica.">
+        <Input
+          name="promo_months"
+          type="number"
+          min={0}
+          max={24}
+          step={1}
+          value={promo}
+          placeholder="0"
+          onChange={(ev) => {
+            setPromo(ev.target.value);
+            if (term) applyTerm(term, purchasedAt, toMonths(ev.target.value));
+            else setTerm(termFor(purchasedAt, renewsAt, toMonths(ev.target.value)));
+          }}
+        />
+      </Field>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Te costó" error={e.cost}>

@@ -111,6 +111,7 @@ export type Subscription = {
   price: number;
   currency: string;
   renews_at: string | null;
+  promo_months: number;
   status: SubStatus;
   notes: string | null;
   created_at: string;
