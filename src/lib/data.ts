@@ -24,6 +24,33 @@ function fail(error: { message: string } | null): asserts error is null {
   if (error) throw new Error(error.message);
 }
 
+/** Error de PostgREST/Postgres por tabla o columna inexistente: la base de datos va atrasada respecto al código. */
+function isMissingSchema(error: { code?: string; message: string }): boolean {
+  return (
+    error.code === "42P01" || // undefined_table
+    error.code === "42703" || // undefined_column
+    error.code === "PGRST204" || // columna no está en el caché de esquema
+    error.code === "PGRST205" || // tabla no está en el caché de esquema
+    /schema cache|does not exist/i.test(error.message)
+  );
+}
+
+/**
+ * Comprueba qué migraciones de supabase/migrations/ faltan por aplicar, probando la tabla o columna que cada una crea.
+ * Devuelve los nombres de archivo pendientes (vacío si la base de datos está al día).
+ */
+export async function pendingMigrations(): Promise<string[]> {
+  const { supabase } = await requireUser();
+  const probes: Array<[string, () => PromiseLike<{ error: { code?: string; message: string } | null }>]> = [
+    ["0002_subscription_email.sql", () => supabase.from("subscriptions").select("email_enc").limit(1)],
+    ["0003_account_term.sql", () => supabase.from("accounts").select("term_years").limit(1)],
+    ["0004_subscription_promo.sql", () => supabase.from("subscriptions").select("promo_months").limit(1)],
+    ["0005_license_kind_term_seats.sql", () => supabase.from("license_seats").select("id").limit(1)],
+  ];
+  const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
+  return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
+}
+
 // ---------------------------------------------------------------- Clientes
 export async function listClients(q = ""): Promise<Client[]> {
   const { supabase } = await requireUser();
@@ -171,9 +198,10 @@ export async function listLicenses(filters: { q?: string; status?: string; kind?
     supabase.from("license_seats").select("*, client:clients(id,name)").order("position"),
   ]);
   fail(lics.error);
-  fail(seats.error);
+  // Si la tabla de puestos aún no existe (migración 0005 pendiente) la página sigue funcionando sin puestos.
+  if (seats.error && !isMissingSchema(seats.error)) fail(seats.error);
   const seatsByLicense = new Map<string, LicenseSeat[]>();
-  for (const s of (seats.data ?? []) as any[]) {
+  for (const s of (seats.error ? [] : (seats.data ?? [])) as any[]) {
     const list = seatsByLicense.get(s.license_id) ?? [];
     list.push({ id: s.id, email: decrypt(s.email_enc), client_id: s.client_id, client_name: s.client?.name ?? null });
     seatsByLicense.set(s.license_id, list);
