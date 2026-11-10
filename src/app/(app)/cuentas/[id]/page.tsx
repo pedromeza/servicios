@@ -25,8 +25,8 @@ export default async function CuentaDetallePage({ params }: PageProps<"/cuentas/
       </Link>
       <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-navy-900">{a.label}</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="break-words text-2xl font-bold tracking-tight text-navy-900">{a.label}</h1>
             {a.role === "admin" ? (
               <Badge tone="navy">
                 <ShieldCheck size={11} /> Administrador
@@ -43,7 +43,7 @@ export default async function CuentaDetallePage({ params }: PageProps<"/cuentas/
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1">
           <CardHeader title="Acceso" description="Datos cifrados; revelar queda en bitácora" />
           <dl className="space-y-4 px-5 py-4 text-sm">
@@ -83,7 +83,7 @@ export default async function CuentaDetallePage({ params }: PageProps<"/cuentas/
           </dl>
         </Card>
 
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <Card>
             <CardHeader title="Suscripciones de esta cuenta" description={`${subscriptions.length} registrada${subscriptions.length === 1 ? "" : "s"}`} />
             {subscriptions.length === 0 ? (

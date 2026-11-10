@@ -21,7 +21,7 @@ export default async function SeguridadPage() {
   return (
     <>
       <PageHeader title="Seguridad" description="Cómo se protegen tus datos y quién los ha consultado" />
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid min-w-0 gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-1">
           <Card>
             <CardHeader title="Tu acceso" />

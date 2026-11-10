@@ -2,7 +2,7 @@ import { cn } from "@/lib/cn";
 import type { ReactNode } from "react";
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <div className={cn("rounded-2xl border border-navy-100 bg-white shadow-card", className)}>{children}</div>;
+  return <div className={cn("min-w-0 max-w-full rounded-2xl border border-navy-100 bg-white shadow-card", className)}>{children}</div>;
 }
 
 export function CardHeader({ title, description, action }: { title: string; description?: string; action?: ReactNode }) {
@@ -42,7 +42,7 @@ export function EmptyState({ icon, title, description, action }: { icon: ReactNo
 
 export function Table({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("overflow-x-auto", className)}>
+    <div className={cn("max-w-full overflow-x-auto overscroll-x-contain", className)}>
       <table className="w-full min-w-[640px] text-sm">{children}</table>
     </div>
   );
