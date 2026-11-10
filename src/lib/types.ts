@@ -57,6 +57,14 @@ export type SubStatus = keyof typeof SUB_STATUS;
 export const LICENSE_STATUS = { available: "Disponible", used: "Utilizada" } as const;
 export type LicenseStatus = keyof typeof LICENSE_STATUS;
 
+export const LICENSE_KINDS = { key: "Clave de producto (serial)", account: "Cuenta (correo y contraseña)" } as const;
+export type LicenseKind = keyof typeof LICENSE_KINDS;
+
+export const LICENSE_TERMS = { perpetual: "Permanente", annual: "Anual" } as const;
+export type LicenseTerm = keyof typeof LICENSE_TERMS;
+
+export const MAX_LICENSE_SEATS = 50;
+
 export const CURRENCIES = ["MXN", "USD"] as const;
 
 export const ACCOUNT_TERMS = { 1: "1 año", 2: "2 años", 3: "3 años" } as const;
@@ -117,10 +125,25 @@ export type Subscription = {
   created_at: string;
 };
 
+export type LicenseSeat = {
+  id: string;
+  email: string | null;
+  client_id: string | null;
+  client_name: string | null;
+};
+
 export type License = {
   id: string;
   product: string;
+  kind: LicenseKind;
   key_hint: string;
+  account_email: string | null;
+  has_account_password: boolean;
+  seats: number;
+  seat_assignments: LicenseSeat[];
+  term: LicenseTerm;
+  purchased_at: string | null;
+  expires_at: string | null;
   status: LicenseStatus;
   client_id: string | null;
   client_name: string | null;

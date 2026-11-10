@@ -11,6 +11,7 @@ export const metadata: Metadata = { title: "Seguridad" };
 const ENTITY_LABEL: Record<string, string> = {
   account_password: "Contraseña de cuenta",
   license_key: "Clave de licencia",
+  license_password: "Contraseña de licencia (cuenta)",
 };
 
 export default async function SeguridadPage() {
@@ -75,7 +76,7 @@ export default async function SeguridadPage() {
                 {audit.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
                     <span className="flex items-center gap-2 text-slate-800">
-                      {a.entity === "license_key" ? <Ticket size={14} className="text-navy-600" /> : <KeyRound size={14} className="text-navy-600" />}
+                      {a.entity === "license_key" || a.entity === "license_password" ? <Ticket size={14} className="text-navy-600" /> : <KeyRound size={14} className="text-navy-600" />}
                       {ENTITY_LABEL[a.entity] ?? a.entity}
                       <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">{a.entity_id?.slice(0, 8)}</code>
                     </span>

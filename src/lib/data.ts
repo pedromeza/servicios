@@ -9,6 +9,7 @@ import type {
   Client,
   DashboardData,
   License,
+  LicenseSeat,
   Option,
   Subscription,
 } from "./types";
@@ -158,20 +159,38 @@ export async function listSubscriptions(filters: { q?: string; status?: string }
 }
 
 // ---------------------------------------------------------------- Licencias
-export async function listLicenses(filters: { q?: string; status?: string } = {}): Promise<License[]> {
+export async function listLicenses(filters: { q?: string; status?: string; kind?: string; term?: string } = {}): Promise<License[]> {
   const { supabase } = await requireUser();
-  const { data, error } = await supabase
-    .from("licenses")
-    .select("*, client:clients(id,name)")
-    .order("status")
-    .order("product")
-    .order("created_at", { ascending: false });
-  fail(error);
-  return (data as any[])
+  const [lics, seats] = await Promise.all([
+    supabase
+      .from("licenses")
+      .select("*, client:clients(id,name)")
+      .order("status")
+      .order("product")
+      .order("created_at", { ascending: false }),
+    supabase.from("license_seats").select("*, client:clients(id,name)").order("position"),
+  ]);
+  fail(lics.error);
+  fail(seats.error);
+  const seatsByLicense = new Map<string, LicenseSeat[]>();
+  for (const s of (seats.data ?? []) as any[]) {
+    const list = seatsByLicense.get(s.license_id) ?? [];
+    list.push({ id: s.id, email: decrypt(s.email_enc), client_id: s.client_id, client_name: s.client?.name ?? null });
+    seatsByLicense.set(s.license_id, list);
+  }
+  return (lics.data as any[])
     .map<License>((r) => ({
       id: r.id,
       product: r.product,
-      key_hint: r.key_hint,
+      kind: r.kind ?? "key",
+      key_hint: r.key_hint ?? "",
+      account_email: decrypt(r.account_email_enc),
+      has_account_password: Boolean(r.account_password_enc),
+      seats: Number(r.seats ?? 1),
+      seat_assignments: seatsByLicense.get(r.id) ?? [],
+      term: r.term ?? "perpetual",
+      purchased_at: r.purchased_at ?? null,
+      expires_at: r.expires_at ?? null,
       status: r.status,
       client_id: r.client_id,
       client_name: r.client?.name ?? null,
@@ -182,7 +201,16 @@ export async function listLicenses(filters: { q?: string; status?: string } = {}
     .filter(
       (l) =>
         (!filters.status || l.status === filters.status) &&
-        matches(filters.q ?? "", [l.product, l.client_name, l.key_hint, l.notes]),
+        (!filters.kind || l.kind === filters.kind) &&
+        (!filters.term || l.term === filters.term) &&
+        matches(filters.q ?? "", [
+          l.product,
+          l.client_name,
+          l.key_hint,
+          l.account_email,
+          l.notes,
+          ...l.seat_assignments.flatMap((s) => [s.email, s.client_name]),
+        ]),
     );
 }
 

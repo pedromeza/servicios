@@ -7,7 +7,8 @@ import { z } from "zod";
 import { createClient } from "./supabase/server";
 import { requireUser } from "./auth";
 import { decrypt, encrypt, keyHint } from "./crypto";
-import { todayISO } from "./format";
+import { addYearsISO, todayISO } from "./format";
+import { MAX_LICENSE_SEATS } from "./types";
 
 export type ActionState = { ok: boolean; error?: string; errors?: Record<string, string> } | null;
 
@@ -265,10 +266,23 @@ export async function setSubscriptionStatus(id: string, status: "active" | "expi
 }
 
 // ---------------------------------------------------------------- Licencias
+const seatSchema = z.object({
+  email: z.email("Correo inválido").max(200).or(z.literal("")),
+  client_id: uuidOrNull,
+});
+
 const licenseSchema = z.object({
   id: z.uuid().nullable(),
   product: z.string().min(1, "Indica el producto").max(120),
+  kind: z.enum(["key", "account"]),
   key: z.string().max(500),
+  account_email: z.email("Correo inválido").max(200).or(z.literal("")),
+  account_password: z.string().max(500),
+  seats: z.coerce.number().int("Debe ser entero").min(1, "Mínimo 1").max(MAX_LICENSE_SEATS, `Máximo ${MAX_LICENSE_SEATS}`),
+  seat_assignments: z.array(seatSchema).max(MAX_LICENSE_SEATS),
+  term: z.enum(["perpetual", "annual"]),
+  purchased_at: dateField,
+  expires_at: dateField,
   status: z.enum(["available", "used"]),
   client_id: uuidOrNull,
   used_at: dateField,
@@ -276,10 +290,24 @@ const licenseSchema = z.object({
 });
 
 export async function saveLicense(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const seatEmails = fd.getAll("seat_email").map((v) => v.toString().trim().toLowerCase());
+  const seatClients = fd.getAll("seat_client").map((v) => v.toString().trim());
+  const seat_assignments = seatEmails
+    .map((email, i) => ({ email, client_id: orNull(seatClients[i] ?? "") }))
+    .filter((s) => s.email !== "" || s.client_id !== null);
+
   const parsed = licenseSchema.safeParse({
     id: orNull(str(fd, "id")),
     product: str(fd, "product"),
+    kind: str(fd, "kind") || "key",
     key: str(fd, "key"),
+    account_email: str(fd, "account_email").toLowerCase(),
+    account_password: fd.get("account_password")?.toString() ?? "",
+    seats: str(fd, "seats") || "1",
+    seat_assignments,
+    term: str(fd, "term") || "perpetual",
+    purchased_at: orNull(str(fd, "purchased_at")),
+    expires_at: orNull(str(fd, "expires_at")),
     status: str(fd, "status") || "available",
     client_id: orNull(str(fd, "client_id")),
     used_at: orNull(str(fd, "used_at")),
@@ -287,24 +315,66 @@ export async function saveLicense(_prev: ActionState, fd: FormData): Promise<Act
   });
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
   const d = parsed.data;
-  if (!d.id && !d.key) return { ok: false, errors: { key: "La clave es obligatoria" } };
+  if (d.kind === "key" && !d.id && !d.key) return { ok: false, errors: { key: "La clave es obligatoria" } };
+  if (d.kind === "account" && !d.id && !d.account_email) {
+    return { ok: false, errors: { account_email: "El correo de la cuenta principal es obligatorio" } };
+  }
+  if (d.kind === "account" && d.seat_assignments.length > d.seats) {
+    return { ok: false, errors: { seats: `Hay ${d.seat_assignments.length} puestos asignados; sube el número de puestos o quita alguno` } };
+  }
 
   const { supabase } = await requireUser();
+  const isAnnual = d.term === "annual";
   const payload: Record<string, unknown> = {
     product: d.product,
+    kind: d.kind,
+    seats: d.kind === "account" ? d.seats : 1,
+    term: d.term,
+    purchased_at: d.purchased_at,
+    expires_at: isAnnual ? (d.expires_at ?? (d.purchased_at ? addYearsISO(d.purchased_at, 1) : null)) : null,
     status: d.status,
     client_id: d.client_id,
     used_at: d.status === "used" ? (d.used_at ?? todayISO()) : null,
     notes_enc: encrypt(d.notes),
   };
-  if (d.key) {
-    payload.key_enc = encrypt(d.key);
-    payload.key_hint = keyHint(d.key);
+  if (d.kind === "key") {
+    if (d.key) {
+      payload.key_enc = encrypt(d.key);
+      payload.key_hint = keyHint(d.key);
+    }
+    payload.account_email_enc = null;
+    payload.account_password_enc = null;
+  } else {
+    if (d.account_email) payload.account_email_enc = encrypt(d.account_email);
+    // Al editar, dejar la contraseña vacía conserva la actual.
+    if (d.account_password !== "" || !d.id) payload.account_password_enc = encrypt(d.account_password);
+    payload.key_enc = null;
+    payload.key_hint = "";
   }
-  const { error } = d.id
-    ? await supabase.from("licenses").update(payload).eq("id", d.id)
-    : await supabase.from("licenses").insert(payload);
-  if (error) return { ok: false, error: error.message };
+
+  let licenseId = d.id;
+  if (licenseId) {
+    const { error } = await supabase.from("licenses").update(payload).eq("id", licenseId);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { data, error } = await supabase.from("licenses").insert(payload).select("id").single();
+    if (error) return { ok: false, error: error.message };
+    licenseId = (data as { id: string }).id;
+  }
+
+  // Los puestos se reemplazan completos: es la forma más simple de reflejar lo que quedó en el formulario.
+  const del = await supabase.from("license_seats").delete().eq("license_id", licenseId);
+  if (del.error) return { ok: false, error: del.error.message };
+  if (d.kind === "account" && d.seat_assignments.length > 0) {
+    const rows = d.seat_assignments.map((s, i) => ({
+      license_id: licenseId,
+      email_enc: encrypt(s.email),
+      client_id: s.client_id,
+      position: i + 1,
+    }));
+    const ins = await supabase.from("license_seats").insert(rows);
+    if (ins.error) return { ok: false, error: ins.error.message };
+  }
   refresh();
   return { ok: true };
 }
@@ -327,7 +397,7 @@ export async function deleteLicense(id: string): Promise<ActionState> {
 }
 
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)
-export type SecretEntity = "account_password" | "license_key";
+export type SecretEntity = "account_password" | "license_key" | "license_password";
 
 export async function revealSecret(
   entity: SecretEntity,
@@ -337,7 +407,7 @@ export async function revealSecret(
   const { supabase } = await requireUser();
 
   const table = entity === "account_password" ? "accounts" : "licenses";
-  const column = entity === "account_password" ? "password_enc" : "key_enc";
+  const column = entity === "account_password" ? "password_enc" : entity === "license_password" ? "account_password_enc" : "key_enc";
   const { data, error } = await supabase.from(table).select(column).eq("id", id).maybeSingle();
   if (error) return { ok: false, error: error.message };
   const enc = (data as Record<string, string | null> | null)?.[column];

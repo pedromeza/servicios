@@ -1,10 +1,11 @@
 "use client";
 
-import { CheckCircle2, Pencil, Plus, Ticket, Trash2, Undo2 } from "lucide-react";
+import { CheckCircle2, KeyRound, Pencil, Plus, Ticket, Trash2, Undo2, UserRound } from "lucide-react";
 import { useCallback, useState, useTransition } from "react";
 import { deleteLicense, toggleLicenseUsed } from "@/lib/actions";
-import { fmtDate } from "@/lib/format";
-import { LICENSE_STATUS, type License, type Option } from "@/lib/types";
+import { daysUntil, fmtDate } from "@/lib/format";
+import { renewalTone } from "@/lib/renewal";
+import { LICENSE_KINDS, LICENSE_STATUS, LICENSE_TERMS, type License, type Option } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
@@ -28,7 +29,7 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
     <>
       <PageHeader
         title="Licencias"
-        description={`${total} clave${total === 1 ? "" : "s"} · ${available} disponible${available === 1 ? "" : "s"} · todas cifradas`}
+        description={`${total} licencia${total === 1 ? "" : "s"} · ${available} disponible${available === 1 ? "" : "s"} · claves y contraseñas cifradas`}
         action={
           <Button onClick={() => open("new")}>
             <Plus size={16} /> Nueva licencia
@@ -36,8 +37,12 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
         }
       />
       <FilterBar
-        placeholder="Buscar por producto, cliente o terminación de la clave…"
-        filters={[{ name: "status", label: "Estado", options: Object.entries(LICENSE_STATUS).map(([k, v]) => ({ value: k, label: v })) }]}
+        placeholder="Buscar por producto, cliente, correo o terminación de la clave…"
+        filters={[
+          { name: "status", label: "Estado", options: Object.entries(LICENSE_STATUS).map(([k, v]) => ({ value: k, label: v })) },
+          { name: "kind", label: "Tipo", options: Object.keys(LICENSE_KINDS).map((k) => ({ value: k, label: k === "key" ? "Clave" : "Cuenta" })) },
+          { name: "term", label: "Vigencia", options: Object.entries(LICENSE_TERMS).map(([k, v]) => ({ value: k, label: v })) },
+        ]}
       />
       <Card>
         {licenses.length === 0 ? (
@@ -52,7 +57,8 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
             <thead className="border-b border-navy-100">
               <tr>
                 <Th>Producto</Th>
-                <Th>Clave</Th>
+                <Th>Clave / acceso</Th>
+                <Th>Vigencia</Th>
                 <Th>Estado</Th>
                 <Th>Cliente</Th>
                 <Th>Utilizada</Th>
@@ -64,10 +70,42 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
                 <tr key={l.id} className={`group hover:bg-navy-50/60 ${l.status === "used" ? "text-slate-500" : ""}`}>
                   <Td>
                     <div className={`font-medium ${l.status === "used" ? "text-slate-500 line-through decoration-slate-300" : "text-navy-900"}`}>{l.product}</div>
+                    <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
+                      {l.kind === "account" ? <UserRound size={11} /> : <KeyRound size={11} />}
+                      {l.kind === "account" ? `Cuenta · ${l.seat_assignments.length} de ${l.seats} puesto${l.seats === 1 ? "" : "s"}` : "Clave de producto"}
+                    </div>
                     {l.notes && <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400">{l.notes}</div>}
                   </Td>
                   <Td>
-                    <SecretField entity="license_key" id={l.id} hint={l.key_hint} />
+                    {l.kind === "account" ? (
+                      <div className="space-y-1">
+                        <div className="break-all text-slate-800">{l.account_email ?? <span className="text-slate-400">Sin correo</span>}</div>
+                        {l.has_account_password ? (
+                          <SecretField entity="license_password" id={l.id} hint="••••••••" />
+                        ) : (
+                          <span className="text-xs text-slate-400">Sin contraseña guardada</span>
+                        )}
+                      </div>
+                    ) : (
+                      <SecretField entity="license_key" id={l.id} hint={l.key_hint} />
+                    )}
+                  </Td>
+                  <Td>
+                    {l.term === "annual" ? (
+                      <div>
+                        <div className="whitespace-nowrap text-slate-800">Anual</div>
+                        {l.expires_at && (
+                          <>
+                            <div className="whitespace-nowrap text-xs text-slate-400">vence {fmtDate(l.expires_at)}</div>
+                            <Badge tone={renewalTone(daysUntil(l.expires_at)).tone} className="mt-1">
+                              {renewalTone(daysUntil(l.expires_at)).label}
+                            </Badge>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-slate-800">Permanente</span>
+                    )}
                   </Td>
                   <Td>
                     {l.status === "available" ? (
@@ -78,7 +116,19 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
                       </Badge>
                     )}
                   </Td>
-                  <Td>{l.client_name ?? <span className="text-slate-400">—</span>}</Td>
+                  <Td>
+                    <div>{l.client_name ?? <span className="text-slate-400">{l.kind === "account" ? "Propia" : "—"}</span>}</div>
+                    {l.seat_assignments.length > 0 && (
+                      <ul className="mt-1 space-y-0.5 text-xs text-slate-400">
+                        {l.seat_assignments.map((s) => (
+                          <li key={s.id} className="break-all">
+                            {s.email ?? "(sin correo)"}
+                            {s.client_name && <span className="text-slate-500"> → {s.client_name}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </Td>
                   <Td className="whitespace-nowrap">{fmtDate(l.used_at)}</Td>
                   <Td>
                     <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
@@ -114,7 +164,7 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
         )}
       </Card>
 
-      <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nueva licencia" : "Editar licencia"}>
+      <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nueva licencia" : "Editar licencia"} wide>
         <LicenseForm key={nonce} license={editing === "new" ? null : editing} clients={clients} onDone={close} onCancel={close} />
       </Dialog>
       <ConfirmDialog
@@ -122,7 +172,11 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
         onClose={() => setDeleting(null)}
         pending={pending}
         title="Eliminar licencia"
-        description={`Se eliminará la clave de ${deleting?.product} que termina en ${deleting?.key_hint}. No podrás recuperarla.`}
+        description={
+          deleting?.kind === "account"
+            ? `Se eliminará la licencia de ${deleting.product} (cuenta ${deleting.account_email ?? "sin correo"}) y sus ${deleting.seat_assignments.length} puesto${deleting.seat_assignments.length === 1 ? "" : "s"} asignado${deleting.seat_assignments.length === 1 ? "" : "s"}. No podrás recuperarla.`
+            : `Se eliminará la clave de ${deleting?.product} que termina en ${deleting?.key_hint}. No podrás recuperarla.`
+        }
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
