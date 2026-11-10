@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PREFIXES = ["/login", "/api/cron"];
+const PUBLIC_PREFIXES = ["/login", "/restablecer", "/api/cron"];
 
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Plantilla de variables (sin secretos) sí se versiona
 !.env.example
+
+# Archivo de importación para Vercel (contiene secretos)
+vercel-import.env

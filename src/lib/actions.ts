@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "./supabase/server";
@@ -41,6 +42,21 @@ export async function login(_prev: ActionState, formData: FormData): Promise<Act
   const { error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) return { ok: false, error: "Correo o contraseña incorrectos." };
   redirect("/");
+}
+
+export async function requestPasswordReset(_prev: ActionState, formData: FormData): Promise<ActionState> {
+  const email = str(formData, "email").toLowerCase();
+  if (!email) return { ok: false, error: "Escribe tu correo." };
+  const allowed = (process.env.ALLOWED_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  // Respuesta neutra: no revelar si el correo existe o está permitido.
+  if (allowed.length && !allowed.includes(email)) return { ok: true };
+  const supabase = await createClient();
+  const origin = (await headers()).get("origin") ?? process.env.APP_URL ?? "";
+  await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${origin}/restablecer` });
+  return { ok: true };
 }
 
 export async function logout() {
