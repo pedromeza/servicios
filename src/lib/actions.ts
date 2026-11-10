@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import path from "node:path";
 import { z } from "zod";
 import { createClient } from "./supabase/server";
 import { requireUser } from "./auth";
@@ -397,6 +398,28 @@ export async function deleteLicense(id: string): Promise<ActionState> {
 }
 
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)
+// ---------------------------------------------------------------- Migraciones
+export type MigrateState = { ok: boolean; lines: string[] } | null;
+
+/** Aplica desde la app las migraciones pendientes usando DATABASE_URL (la misma lógica que el build). */
+export async function runMigrationsNow(): Promise<MigrateState> {
+  await requireUser();
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    return {
+      ok: false,
+      lines: [
+        "DATABASE_URL no está configurada en Vercel (Settings → Environment Variables, entorno Production).",
+        "Cópiala de Supabase → Connect → Session pooler, con tu contraseña, y vuelve a desplegar.",
+      ],
+    };
+  }
+  const { applyMigrations } = await import("../../scripts/migrate-core.mjs");
+  const result = await applyMigrations({ url, dir: path.join(process.cwd(), "supabase", "migrations") });
+  refresh();
+  return { ok: result.ok, lines: result.lines };
+}
+
 export type SecretEntity = "account_password" | "license_key" | "license_password";
 
 export async function revealSecret(
