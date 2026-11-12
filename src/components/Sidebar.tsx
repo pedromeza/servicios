@@ -21,7 +21,7 @@ function isActive(pathname: string, href: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-export function Sidebar({ email }: { email: string }) {
+export function Sidebar({ email, version }: { email: string; version: string }) {
   const pathname = usePathname();
   return (
     <aside className="fixed inset-y-0 left-0 hidden w-64 flex-col bg-navy-900 text-white md:flex">
@@ -58,17 +58,25 @@ export function Sidebar({ email }: { email: string }) {
             <LogOut size={16} /> Cerrar sesión
           </button>
         </form>
+        <p className="mt-2 font-mono text-[10px] text-navy-200/60" title="Versión desplegada">
+          v. {version}
+        </p>
       </div>
     </aside>
   );
 }
 
-export function MobileNav() {
+export function MobileNav({ version }: { version: string }) {
   const pathname = usePathname();
   return (
     <header className="sticky top-0 z-40 bg-navy-900 text-white md:hidden">
       <div className="flex items-center justify-between px-4 py-3">
-        <Logo compact />
+        <div className="flex items-center gap-2">
+          <Logo compact />
+          <span className="font-mono text-[10px] text-navy-200/60" title="Versión desplegada">
+            v. {version}
+          </span>
+        </div>
         <form action={logout}>
           <button type="submit" aria-label="Cerrar sesión" className="rounded-lg p-2 text-navy-200 hover:bg-white/10 hover:text-white">
             <LogOut size={18} />
