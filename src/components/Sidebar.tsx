@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyRound, LayoutDashboard, LogOut, RefreshCw, ShieldCheck, Ticket, Users } from "lucide-react";
+import { Gift, KeyRound, LayoutDashboard, LogOut, RefreshCw, ShieldCheck, Ticket, Users } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/actions";
@@ -13,6 +13,7 @@ const NAV = [
   { href: "/cuentas", label: "Cuentas", icon: KeyRound },
   { href: "/suscripciones", label: "Suscripciones", icon: RefreshCw },
   { href: "/licencias", label: "Licencias", icon: Ticket },
+  { href: "/lealtad", label: "Lealtad", icon: Gift },
   { href: "/seguridad", label: "Seguridad", icon: ShieldCheck },
 ];
 

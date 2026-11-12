@@ -28,7 +28,7 @@ Stack: Next.js 16 · Supabase (Postgres + Auth) · Resend · Vercel. Todo cabe e
 ### 1. Supabase (base de datos y login)
 
 1. Crea un proyecto gratuito en <https://supabase.com>.
-2. Abre **SQL Editor → New query**, pega el contenido de [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) y ejecútalo. Las migraciones posteriores (`0002…`, `0003…`) se aplican solas en cada despliegue si configuras `DATABASE_URL` (ver *Migraciones automáticas* más abajo); si no, ejecútalas a mano en orden.
+2. Abre **SQL Editor → New query**, pega el contenido de [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) y ejecútalo. Las migraciones posteriores (`0002…` a `0006…`) se aplican solas en cada despliegue si configuras `DATABASE_URL` (ver *Migraciones automáticas* más abajo); si no, ejecútalas a mano en orden.
 3. **Authentication → Sign In / Providers → Email**: desactiva *Allow new users to sign up*. (Opcional: desactiva *Confirm email* para no depender del correo de confirmación.)
 4. **Authentication → Users → Add user → Create new user**: tu correo y una contraseña larga. Marca *Auto Confirm User*.
 5. **Project Settings → API**: copia `Project URL`, la llave `anon`/`publishable` y la llave `service_role` (esta última es secreta).

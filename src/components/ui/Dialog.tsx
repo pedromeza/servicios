@@ -71,6 +71,8 @@ export function ConfirmDialog({
   title,
   description,
   confirmLabel = "Eliminar",
+  pendingLabel = "Eliminando…",
+  tone = "danger",
   pending,
 }: {
   open: boolean;
@@ -79,6 +81,8 @@ export function ConfirmDialog({
   title: string;
   description: string;
   confirmLabel?: string;
+  pendingLabel?: string;
+  tone?: "danger" | "primary";
   pending?: boolean;
 }) {
   return (
@@ -96,9 +100,12 @@ export function ConfirmDialog({
           type="button"
           onClick={onConfirm}
           disabled={pending}
-          className="h-10 rounded-lg bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+          className={cn(
+            "h-10 rounded-lg px-4 text-sm font-medium text-white disabled:opacity-50",
+            tone === "danger" ? "bg-red-600 hover:bg-red-700" : "bg-brand hover:bg-brand-dark",
+          )}
         >
-          {pending ? "Eliminando…" : confirmLabel}
+          {pending ? pendingLabel : confirmLabel}
         </button>
       </div>
     </Dialog>

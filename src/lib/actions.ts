@@ -8,7 +8,8 @@ import { z } from "zod";
 import { createClient } from "./supabase/server";
 import { requireUser } from "./auth";
 import { decrypt, encrypt, keyHint } from "./crypto";
-import { addYearsISO, todayISO } from "./format";
+import { addMonthsISO, addYearsISO, todayISO } from "./format";
+import { LOYALTY } from "./loyalty";
 import { MAX_LICENSE_SEATS } from "./types";
 
 export type ActionState = { ok: boolean; error?: string; errors?: Record<string, string> } | null;
@@ -250,6 +251,30 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
   return { ok: true };
 }
 
+/**
+ * Renueva una suscripción: corre la fecha de renovación un periodo más (la vigencia detectada entre
+ * compra y renovación, o 1 año) y suma una renovación, que cuenta como sello en la tarjeta del cliente.
+ */
+export async function renewSubscription(id: string): Promise<ActionState> {
+  if (!z.uuid().safeParse(id).success) return { ok: false, error: "Identificador inválido." };
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.from("subscriptions").select("purchased_at,renews_at,renewals").eq("id", id).maybeSingle();
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "La suscripción no existe." };
+  const from: string = data.renews_at ?? todayISO();
+  let years = 1;
+  if (data.purchased_at && data.renews_at) {
+    for (const n of [1, 2, 3]) if (addYearsISO(data.purchased_at, n) === data.renews_at) years = n;
+  }
+  const upd = await supabase
+    .from("subscriptions")
+    .update({ renews_at: addYearsISO(from, years), renewals: Number(data.renewals ?? 0) + 1, status: "active" })
+    .eq("id", id);
+  if (upd.error) return { ok: false, error: upd.error.message };
+  refresh();
+  return { ok: true };
+}
+
 export async function deleteSubscription(id: string): Promise<ActionState> {
   const { supabase } = await requireUser();
   const { error } = await supabase.from("subscriptions").delete().eq("id", id);
@@ -398,6 +423,49 @@ export async function deleteLicense(id: string): Promise<ActionState> {
 }
 
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)
+// ---------------------------------------------------------------- Lealtad
+const rewardSchema = z.object({
+  client_id: z.uuid("Cliente inválido"),
+  description: z.string().min(1, "Describe el premio").max(200),
+  granted_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
+  months: z.coerce.number().int("Debe ser entero").min(0, "No puede ser negativo").max(36, "Máximo 36 meses"),
+  stamps_used: z.coerce.number().int().min(1).max(100),
+  notes: z.string().max(2000),
+});
+
+export async function grantReward(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const parsed = rewardSchema.safeParse({
+    client_id: str(fd, "client_id"),
+    description: str(fd, "description"),
+    granted_at: str(fd, "granted_at") || todayISO(),
+    months: str(fd, "months") || "0",
+    stamps_used: str(fd, "stamps_used") || String(LOYALTY.stampsPerReward),
+    notes: str(fd, "notes"),
+  });
+  if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
+  const d = parsed.data;
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("rewards").insert({
+    client_id: d.client_id,
+    description: d.description,
+    stamps_used: d.stamps_used,
+    granted_at: d.granted_at,
+    expires_at: d.months > 0 ? addMonthsISO(d.granted_at, d.months) : null,
+    notes_enc: encrypt(d.notes),
+  });
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
+export async function deleteReward(id: string): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("rewards").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------- Migraciones
 export type MigrateState = { ok: boolean; lines: string[] } | null;
 

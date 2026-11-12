@@ -2,7 +2,7 @@
 
 import { AlertTriangle, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useState, useTransition } from "react";
-import { deleteSubscription, setSubscriptionStatus } from "@/lib/actions";
+import { deleteSubscription, renewSubscription, setSubscriptionStatus } from "@/lib/actions";
 import { daysUntil, fmtDate, fmtMoney } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
 import { SUB_PLANS, SUB_STATUS, type Option, type Subscription } from "@/lib/types";
@@ -26,6 +26,7 @@ export function SubscriptionsManager({
 }) {
   const [editing, setEditing] = useState<Subscription | "new" | null>(null);
   const [deleting, setDeleting] = useState<Subscription | null>(null);
+  const [renewing, setRenewing] = useState<Subscription | null>(null);
   const [nonce, setNonce] = useState(0);
   const [pending, start] = useTransition();
   const open = (s: Subscription | "new") => {
@@ -81,7 +82,7 @@ export function SubscriptionsManager({
                 <Th>Renueva</Th>
                 <Th className="text-right">Costo / Venta</Th>
                 <Th>Estado</Th>
-                <Th className="w-24" />
+                <Th className="w-32" />
               </tr>
             </thead>
             <tbody className="divide-y divide-navy-100">
@@ -107,6 +108,11 @@ export function SubscriptionsManager({
                     <Td className="whitespace-nowrap">{fmtDate(s.purchased_at)}</Td>
                     <Td>
                       <div className="whitespace-nowrap text-slate-800">{fmtDate(s.renews_at)}</div>
+                      {s.renewals > 0 && (
+                        <div className="text-xs text-slate-400">
+                          renovada {s.renewals} vez{s.renewals === 1 ? "" : "es"}
+                        </div>
+                      )}
                       {s.promo_months > 0 && (
                         <div className="text-xs text-emerald-600">
                           +{s.promo_months} mes{s.promo_months === 1 ? "" : "es"} gratis
@@ -141,6 +147,9 @@ export function SubscriptionsManager({
                     </Td>
                     <Td>
                       <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
+                        <Button size="icon" variant="ghost" aria-label="Renovar" title="Renovar un periodo más (suma un sello de lealtad)" onClick={() => setRenewing(s)}>
+                          <RefreshCw size={15} />
+                        </Button>
                         <Button size="icon" variant="ghost" aria-label="Editar" onClick={() => open(s)}>
                           <Pencil size={15} />
                         </Button>
@@ -160,6 +169,23 @@ export function SubscriptionsManager({
       <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nueva suscripción" : "Editar suscripción"} wide>
         <SubscriptionForm key={nonce} subscription={editing === "new" ? null : editing} accounts={accounts} clients={clients} onDone={close} onCancel={close} />
       </Dialog>
+      <ConfirmDialog
+        open={renewing !== null}
+        onClose={() => setRenewing(null)}
+        pending={pending}
+        title="Renovar suscripción"
+        confirmLabel="Renovar"
+        pendingLabel="Renovando…"
+        tone="primary"
+        description={`Se correrá la fecha de renovación de ${renewing?.products.join(", ")} un periodo más a partir del ${fmtDate(renewing?.renews_at)}, quedará activa y el cliente sumará un sello en su tarjeta de lealtad.`}
+        onConfirm={() => {
+          if (!renewing) return;
+          start(async () => {
+            await renewSubscription(renewing.id);
+            setRenewing(null);
+          });
+        }}
+      />
       <ConfirmDialog
         open={deleting !== null}
         onClose={() => setDeleting(null)}

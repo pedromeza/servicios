@@ -3,6 +3,7 @@ import "server-only";
 import { decrypt } from "./crypto";
 import { requireUser } from "./auth";
 import { addYearsISO, daysUntil } from "./format";
+import { buildCard, type LoyaltyCard, type Reward, type Stamp } from "./loyalty";
 import type {
   Account,
   AuditEntry,
@@ -46,6 +47,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0003_account_term.sql", () => supabase.from("accounts").select("term_years").limit(1)],
     ["0004_subscription_promo.sql", () => supabase.from("subscriptions").select("promo_months").limit(1)],
     ["0005_license_kind_term_seats.sql", () => supabase.from("license_seats").select("id").limit(1)],
+    ["0006_loyalty.sql", () => supabase.from("rewards").select("id").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -174,6 +176,7 @@ export async function listSubscriptions(filters: { q?: string; status?: string }
       currency: r.currency,
       renews_at: r.renews_at,
       promo_months: Number(r.promo_months ?? 0),
+      renewals: Number(r.renewals ?? 0),
       status: r.status,
       notes: decrypt(r.notes_enc),
       created_at: r.created_at,
@@ -240,6 +243,63 @@ export async function listLicenses(filters: { q?: string; status?: string; kind?
           ...l.seat_assignments.flatMap((s) => [s.email, s.client_name]),
         ]),
     );
+}
+
+// ---------------------------------------------------------------- Lealtad
+export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
+  const { supabase } = await requireUser();
+  const [clients, subs, lics, seats, rewards] = await Promise.all([
+    supabase.from("clients").select("id,name").order("name"),
+    supabase.from("subscriptions").select("*"),
+    supabase.from("licenses").select("*"),
+    supabase.from("license_seats").select("id,client_id,created_at,license:licenses(product)"),
+    supabase.from("rewards").select("*").order("granted_at", { ascending: false }),
+  ]);
+  fail(clients.error);
+  fail(subs.error);
+  fail(lics.error);
+  // Tablas de migraciones aún no aplicadas (0005 puestos, 0006 premios): la página funciona sin ellas.
+  if (seats.error && !isMissingSchema(seats.error)) fail(seats.error);
+  if (rewards.error && !isMissingSchema(rewards.error)) fail(rewards.error);
+
+  const stampsByClient = new Map<string, Stamp[]>();
+  const push = (clientId: string | null, stamp: Stamp) => {
+    if (!clientId) return;
+    const list = stampsByClient.get(clientId) ?? [];
+    list.push(stamp);
+    stampsByClient.set(clientId, list);
+  };
+  for (const s of (subs.data ?? []) as any[]) {
+    const label = (s.products ?? []).join(", ") || "Suscripción";
+    push(s.client_id, { date: s.purchased_at ?? s.created_at?.slice(0, 10) ?? null, label, kind: "subscription" });
+    for (let i = 0; i < Number(s.renewals ?? 0); i++) {
+      push(s.client_id, { date: s.renews_at ?? null, label: `Renovación de ${label}`, kind: "renewal" });
+    }
+  }
+  for (const l of (lics.data ?? []) as any[]) {
+    push(l.client_id, { date: l.used_at ?? l.purchased_at ?? l.created_at?.slice(0, 10) ?? null, label: l.product, kind: "license" });
+  }
+  for (const s of (seats.error ? [] : (seats.data ?? [])) as any[]) {
+    push(s.client_id, { date: s.created_at?.slice(0, 10) ?? null, label: `Puesto de ${s.license?.product ?? "licencia"}`, kind: "seat" });
+  }
+  const rewardsByClient = new Map<string, Reward[]>();
+  for (const r of (rewards.error ? [] : (rewards.data ?? [])) as any[]) {
+    const list = rewardsByClient.get(r.client_id) ?? [];
+    list.push({
+      id: r.id,
+      description: r.description,
+      stamps_used: Number(r.stamps_used ?? 0),
+      granted_at: r.granted_at,
+      expires_at: r.expires_at,
+      notes: decrypt(r.notes_enc),
+    });
+    rewardsByClient.set(r.client_id, list);
+  }
+
+  return ((clients.data ?? []) as any[])
+    .map((c) => buildCard(c.id, c.name, stampsByClient.get(c.id) ?? [], rewardsByClient.get(c.id) ?? []))
+    .filter((card) => matches(q, [card.client_name]))
+    .sort((a, b) => b.rewards_available - a.rewards_available || b.total_stamps - a.total_stamps || a.client_name.localeCompare(b.client_name));
 }
 
 // ---------------------------------------------------------------- Bitácora

@@ -20,6 +20,7 @@ const BASELINE_CHECKS = {
   "0003_account_term.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='accounts' and column_name='term_years')`,
   "0004_subscription_promo.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='subscriptions' and column_name='promo_months')`,
   "0005_license_kind_term_seats.sql": `select to_regclass('public.license_seats') is not null`,
+  "0006_loyalty.sql": `select to_regclass('public.rewards') is not null`,
 };
 
 /**
