@@ -56,7 +56,9 @@ export async function sendEmail(to: string, subject: string, html: string, text?
   const from = process.env.FROM_EMAIL ?? "PGPM MEX <onboarding@resend.dev>";
   if (!apiKey) return { ok: false, error: "Falta RESEND_API_KEY en las variables de entorno." };
   const resend = new Resend(apiKey);
-  const { error } = await resend.emails.send({ from, to, subject, html, text });
+  // Las respuestas del cliente van a tu correo real, aunque el remitente sea el de avisos.
+  const replyTo = process.env.REPLY_TO ?? process.env.NOTIFY_EMAIL;
+  const { error } = await resend.emails.send({ from, to, subject, html, text, ...(replyTo ? { replyTo } : {}) });
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }
