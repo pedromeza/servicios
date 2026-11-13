@@ -4,6 +4,9 @@ import { ResetForm } from "./ResetForm";
 
 export const metadata: Metadata = { title: "Nueva contraseña" };
 
+// No se prerenderiza al compilar: así un build sin variables NEXT_PUBLIC_SUPABASE_* (p. ej. un preview) no falla.
+export const dynamic = "force-dynamic";
+
 export default function RestablecerPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-navy-50 p-6">
