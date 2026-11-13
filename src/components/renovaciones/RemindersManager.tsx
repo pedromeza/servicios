@@ -1,9 +1,10 @@
 "use client";
 
-import { AlertTriangle, BellRing, CheckCircle2, Mail, MailX, Send } from "lucide-react";
+import { AlertTriangle, BellRing, CheckCircle2, Mail, MailCheck, MailX, Send } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { sendReminders, type SendResult } from "@/lib/actions";
+import type { EmailProvider } from "@/lib/email";
 import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import type { ReminderSettings } from "@/lib/reminders";
 import { renewalTone } from "@/lib/renewal";
@@ -19,7 +20,7 @@ export function RemindersManager({
   settings,
   candidates,
   days,
-  fromEmail,
+  mail,
   testTo,
   resendReady,
   defaultLogoUrl,
@@ -27,7 +28,7 @@ export function RemindersManager({
   settings: ReminderSettings;
   candidates: ReminderCandidate[];
   days: number;
-  fromEmail: string;
+  mail: EmailProvider;
   testTo: string;
   resendReady: boolean;
   defaultLogoUrl: string;
@@ -54,7 +55,6 @@ export function RemindersManager({
     next.set("dias", d);
     router.replace(`${pathname}?${next}`);
   };
-  const usesTestSender = /resend\.dev/i.test(fromEmail);
 
   return (
     <>
@@ -63,17 +63,27 @@ export function RemindersManager({
         description={`${candidates.length} suscripci${candidates.length === 1 ? "ón vence" : "ones vencen"} en los próximos ${days} días o ya vencieron · ${withEmail.length} con correo`}
       />
 
-      {!resendReady ? (
+      {mail.provider === "none" ? (
         <Notice tone="danger">
-          Falta <code>RESEND_API_KEY</code> en Vercel: la app no puede enviar correos todavía.
+          La app no puede enviar correos todavía. En Vercel define <code>GMAIL_USER</code> y <code>GMAIL_APP_PASSWORD</code> para enviar desde tu
+          Gmail, o <code>RESEND_API_KEY</code> para usar Resend.
         </Notice>
-      ) : usesTestSender ? (
+      ) : mail.provider === "gmail" ? (
+        <Notice tone="success">
+          Enviando desde tu Gmail: <code>{mail.from}</code>. Los correos llegan a la bandeja principal y las respuestas caen en tu Gmail. Gmail
+          permite unos 500 envíos al día.
+        </Notice>
+      ) : mail.limited ? (
         <Notice tone="warning">
-          Estás enviando desde <code>{fromEmail}</code>, el remitente de prueba de Resend: <strong>solo llega a tu propio correo</strong>. Para
-          escribir a clientes, verifica tu dominio en Resend y pon en Vercel <code>FROM_EMAIL</code>, por ejemplo{" "}
-          <code>PGPM MEX &lt;avisos@tudominio.com&gt;</code>.
+          Estás enviando desde <code>{mail.from}</code>, el remitente de prueba de Resend: <strong>solo llega a tu propio correo</strong> y suele
+          caer en spam. Para escribir a clientes, configura tu Gmail (<code>GMAIL_USER</code> y <code>GMAIL_APP_PASSWORD</code>) o verifica un dominio en
+          Resend.
         </Notice>
-      ) : null}
+      ) : (
+        <Notice tone="success">
+          Enviando con Resend desde <code>{mail.from}</code>.
+        </Notice>
+      )}
 
       <div className="mb-6">
         <TemplateEditor settings={settings} testTo={testTo} resendReady={resendReady} defaultLogoUrl={defaultLogoUrl} />
@@ -231,11 +241,16 @@ export function RemindersManager({
   );
 }
 
-function Notice({ tone, children }: { tone: "warning" | "danger"; children: React.ReactNode }) {
-  const cls = tone === "danger" ? "border-red-200 bg-red-50 text-red-800" : "border-amber-200 bg-amber-50 text-amber-900";
+function Notice({ tone, children }: { tone: "warning" | "danger" | "success"; children: React.ReactNode }) {
+  const cls =
+    tone === "danger"
+      ? "border-red-200 bg-red-50 text-red-800"
+      : tone === "success"
+        ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+        : "border-amber-200 bg-amber-50 text-amber-900";
   return (
-    <div role="alert" className={`mb-6 flex items-start gap-2 rounded-2xl border px-4 py-3 text-sm ${cls}`}>
-      <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+    <div role={tone === "success" ? "status" : "alert"} className={`mb-6 flex items-start gap-2 rounded-2xl border px-4 py-3 text-sm ${cls}`}>
+      {tone === "success" ? <MailCheck size={18} className="mt-0.5 shrink-0" /> : <AlertTriangle size={18} className="mt-0.5 shrink-0" />}
       <p className="[&_code]:rounded [&_code]:bg-white/70 [&_code]:px-1">{children}</p>
     </div>
   );

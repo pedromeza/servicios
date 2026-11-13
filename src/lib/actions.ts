@@ -531,7 +531,7 @@ export async function sendReminderTest(_prev: ActionState, fd: FormData): Promis
   const parsed = settingsFromForm(fd);
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
   const { user } = await requireUser();
-  const to = process.env.NOTIFY_EMAIL || user.email;
+  const to = process.env.NOTIFY_EMAIL || process.env.GMAIL_USER || user.email;
   if (!to) return { ok: false, error: "No sé a qué correo enviarte la prueba: define NOTIFY_EMAIL." };
   const vars: ReminderVars = { ...SAMPLE_VARS, whatsapp: parsed.data.whatsapp || SAMPLE_VARS.whatsapp };
   const mail = reminderHtml({ ...parsed.data, logo_url: parsed.data.logo_url || (await defaultLogoUrl()) }, vars);

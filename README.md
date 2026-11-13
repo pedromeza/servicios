@@ -57,7 +57,15 @@ openssl rand -base64 32
 
 Guarda el resultado: será `ENCRYPTION_KEY`.
 
-### 3. Resend (avisos por correo)
+### 3. Correo: Gmail o Resend
+
+**Opción A, Gmail (recomendada sin dominio propio).** Los correos salen desde tu cuenta y llegan a la bandeja principal.
+
+1. En tu cuenta de Google activa la **verificación en dos pasos**.
+2. Entra a <https://myaccount.google.com/apppasswords>, crea una contraseña de aplicación llamada "PGPM Admin" y copia las 16 letras.
+3. Define `GMAIL_USER` (tu correo) y `GMAIL_APP_PASSWORD` (las 16 letras). Gmail permite unos 500 envíos al día.
+
+**Opción B, Resend.**
 
 1. Crea una cuenta gratuita en <https://resend.com> y genera una **API key**.
 2. Sin dominio propio puedes enviar desde `onboarding@resend.dev` **solo a tu propio correo** (el de la cuenta de Resend). Con dominio verificado puedes usar `avisos@tudominio.com`.

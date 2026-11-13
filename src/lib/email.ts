@@ -1,6 +1,27 @@
 import "server-only";
+import nodemailer from "nodemailer";
 import { Resend } from "resend";
 import { fmtDate, fmtMoney } from "./format";
+
+export type EmailProvider = { provider: "gmail" | "resend" | "none"; from: string; limited: boolean };
+
+/**
+ * Qué proveedor usa la app para enviar correo:
+ * - Gmail (SMTP con contraseña de aplicación) si existen GMAIL_USER y GMAIL_APP_PASSWORD: llega a la bandeja, sin dominio propio.
+ * - Resend si existe RESEND_API_KEY. Con el remitente de prueba (resend.dev) solo entrega a tu propio correo.
+ */
+export function emailProvider(): EmailProvider {
+  const gmailUser = process.env.GMAIL_USER;
+  if (gmailUser && process.env.GMAIL_APP_PASSWORD) {
+    const name = process.env.FROM_NAME ?? "PGPM MEX";
+    return { provider: "gmail", from: `${name} <${gmailUser}>`, limited: false };
+  }
+  if (process.env.RESEND_API_KEY) {
+    const from = process.env.FROM_EMAIL ?? "PGPM MEX <onboarding@resend.dev>";
+    return { provider: "resend", from, limited: /resend\.dev/i.test(from) };
+  }
+  return { provider: "none", from: "", limited: true };
+}
 
 export type RenewalItem = {
   client: string;
@@ -50,29 +71,48 @@ export function renewalEmailHtml(items: RenewalItem[], appUrl: string) {
   </div></body></html>`;
 }
 
-/** Envío genérico con Resend. Devuelve el error de Resend como texto para mostrarlo en pantalla. */
+/** Envío genérico por el proveedor configurado. Devuelve el error como texto para mostrarlo en pantalla. */
 export async function sendEmail(to: string, subject: string, html: string, text?: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.FROM_EMAIL ?? "PGPM MEX <onboarding@resend.dev>";
-  if (!apiKey) return { ok: false, error: "Falta RESEND_API_KEY en las variables de entorno." };
-  const resend = new Resend(apiKey);
+  const { provider, from } = emailProvider();
   // Las respuestas del cliente van a tu correo real, aunque el remitente sea el de avisos.
   const replyTo = process.env.REPLY_TO ?? process.env.NOTIFY_EMAIL;
-  const { error } = await resend.emails.send({ from, to, subject, html, text, ...(replyTo ? { replyTo } : {}) });
-  if (error) return { ok: false, error: error.message };
-  return { ok: true };
+
+  if (provider === "gmail") {
+    try {
+      const transport = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 465,
+        secure: true,
+        auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD },
+      });
+      await transport.sendMail({ from, to, subject, html, text, ...(replyTo ? { replyTo } : {}) });
+      return { ok: true };
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/535|Username and Password not accepted|BadCredentials/i.test(msg)) {
+        return { ok: false, error: "Gmail rechazó el usuario o la contraseña de aplicación. Revisa GMAIL_USER y GMAIL_APP_PASSWORD en Vercel." };
+      }
+      return { ok: false, error: `Gmail: ${msg}` };
+    }
+  }
+
+  if (provider === "resend") {
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const { error } = await resend.emails.send({ from, to, subject, html, text, ...(replyTo ? { replyTo } : {}) });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }
+
+  return { ok: false, error: "No hay proveedor de correo: define GMAIL_USER y GMAIL_APP_PASSWORD, o RESEND_API_KEY, en Vercel." };
 }
 
 export async function sendRenewalEmail(items: RenewalItem[], appUrl: string) {
-  const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.NOTIFY_EMAIL;
-  const from = process.env.FROM_EMAIL ?? "PGPM MEX <onboarding@resend.dev>";
-  if (!apiKey || !to) throw new Error("Faltan RESEND_API_KEY o NOTIFY_EMAIL.");
-  const resend = new Resend(apiKey);
+  if (!to) throw new Error("Falta NOTIFY_EMAIL.");
   const urgent = items.filter((i) => i.days <= 7).length;
   const subject = urgent
     ? `⚠️ ${urgent} renovaci${urgent === 1 ? "ón" : "ones"} en menos de 7 días`
     : `${items.length} renovaci${items.length === 1 ? "ón próxima" : "ones próximas"}`;
-  const { error } = await resend.emails.send({ from, to, subject, html: renewalEmailHtml(items, appUrl) });
-  if (error) throw new Error(error.message);
+  const res = await sendEmail(to, subject, renewalEmailHtml(items, appUrl));
+  if (!res.ok) throw new Error(res.error);
 }
