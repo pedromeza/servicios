@@ -37,7 +37,7 @@ export function LoyaltyBoard({ cards, paging, total }: { cards: LoyaltyCard[]; p
       </div>
 
       <FilterBar placeholder="Buscar cliente…" />
-      {paging.pages > 1 && (
+      {cards.length > 0 && (
         <Card className="mb-4">
           <Pagination paging={paging} label="clientes" />
         </Card>
@@ -61,6 +61,11 @@ export function LoyaltyBoard({ cards, paging, total }: { cards: LoyaltyCard[]; p
             <LoyaltyCardView key={c.client_id} card={c} onGrant={() => open(c)} />
           ))}
         </div>
+      )}
+      {cards.length > 0 && paging.pages > 1 && (
+        <Card className="mt-4">
+          <Pagination paging={paging} label="clientes" />
+        </Card>
       )}
 
       <Dialog open={granting !== null} onClose={close} title={granting ? `Otorgar premio a ${granting.client_name}` : "Otorgar premio"}>

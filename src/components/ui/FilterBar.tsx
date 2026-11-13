@@ -31,7 +31,7 @@ export function FilterBar({ placeholder, filters = [] }: { placeholder: string; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  const hasFilters = [...params.keys()].some((k) => k !== "page");
+  const hasFilters = [...params.keys()].some((k) => k !== "page" && k !== "por");
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -66,7 +66,8 @@ export function FilterBar({ placeholder, filters = [] }: { placeholder: string; 
           type="button"
           onClick={() => {
             setQ("");
-            router.replace(pathname);
+            const por = params.get("por");
+            router.replace(por ? `${pathname}?por=${por}` : pathname);
           }}
           className="inline-flex h-10 items-center gap-1 rounded-lg px-3 text-sm text-slate-500 hover:bg-navy-100 hover:text-navy-900"
         >

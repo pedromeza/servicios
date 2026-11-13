@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { Page } from "@/lib/paging";
+import { PAGE_SIZES, type Page } from "@/lib/paging";
 
 /** Paginador que vive en la URL (?page=N) para convivir con la búsqueda y los filtros. */
 export function Pagination({ paging, label = "registros" }: { paging: Page; label?: string }) {
@@ -17,6 +17,12 @@ export function Pagination({ paging, label = "registros" }: { paging: Page; labe
     else next.set("page", String(page));
     router.replace(`${pathname}${next.toString() ? `?${next}` : ""}`);
   };
+  const setSize = (size: string) => {
+    const next = new URLSearchParams(params.toString());
+    next.set("por", size);
+    next.delete("page");
+    router.replace(`${pathname}?${next}`);
+  };
 
   // Páginas a mostrar: primera, última y las vecinas de la actual.
   const shown = new Set<number>([1, paging.pages, paging.page - 1, paging.page, paging.page + 1].filter((p) => p >= 1 && p <= paging.pages));
@@ -24,9 +30,25 @@ export function Pagination({ paging, label = "registros" }: { paging: Page; labe
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-navy-100 px-4 py-3 text-sm text-slate-500">
-      <span>
-        {paging.from}–{paging.to} de {paging.count} {label}
-      </span>
+      <div className="flex flex-wrap items-center gap-3">
+        <span>
+          {paging.from}–{paging.to} de {paging.count} {label}
+        </span>
+        <label className="flex items-center gap-1.5 text-xs">
+          Por página
+          <select
+            value={paging.size}
+            onChange={(ev) => setSize(ev.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:border-navy-600 focus:outline-none"
+          >
+            {PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       {paging.pages > 1 && (
         <nav className="flex items-center gap-1" aria-label="Paginación">
           <button

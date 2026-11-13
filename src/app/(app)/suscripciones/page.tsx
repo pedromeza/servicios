@@ -12,6 +12,6 @@ export default async function SuscripcionesPage({ searchParams }: PageProps<"/su
   const filters = { q: s(sp.q), status: s(sp.status) };
   const [all, accounts, clients] = await Promise.all([listSubscriptions(), accountOptions(), clientOptions()]);
   const filtered = filters.q || filters.status ? await listSubscriptions(filters) : all;
-  const { items, paging } = paginate(filtered, s(sp.page) || undefined);
+  const { items, paging } = paginate(filtered, s(sp.page) || undefined, s(sp.por) || undefined);
   return <SubscriptionsManager subscriptions={items} paging={paging} total={all.length} accounts={accounts} clients={clients} />;
 }

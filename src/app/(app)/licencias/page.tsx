@@ -12,7 +12,7 @@ export default async function LicenciasPage({ searchParams }: PageProps<"/licenc
   const filters = { q: s(sp.q), status: s(sp.status), kind: s(sp.kind), term: s(sp.term) };
   const [all, clients] = await Promise.all([listLicenses(), clientOptions()]);
   const filtered = Object.values(filters).some(Boolean) ? await listLicenses(filters) : all;
-  const { items, paging } = paginate(filtered, s(sp.page) || undefined);
+  const { items, paging } = paginate(filtered, s(sp.page) || undefined, s(sp.por) || undefined);
   return (
     <LicensesManager
       licenses={items}

@@ -11,6 +11,6 @@ export default async function ClientesPage({ searchParams }: PageProps<"/cliente
   // Siempre se cargan todos: la lista completa de nombres alimenta el aviso de duplicados del formulario.
   const [clients, all] = await Promise.all([q ? listClients(q) : listClients(), q ? listClients() : null]);
   const everyone = all ?? clients;
-  const { items, paging } = paginate(clients, typeof sp.page === "string" ? sp.page : undefined);
+  const { items, paging } = paginate(clients, typeof sp.page === "string" ? sp.page : undefined, typeof sp.por === "string" ? sp.por : undefined);
   return <ClientsManager clients={items} paging={paging} total={everyone.length} allNames={everyone.map((c) => c.name)} />;
 }
