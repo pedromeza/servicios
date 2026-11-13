@@ -125,6 +125,7 @@ export type Subscription = {
   promo_months: number;
   renewals: number;
   status: SubStatus;
+  deleted_at: string | null; // en la papelera si tiene valor
   notes: string | null;
   created_at: string;
 };

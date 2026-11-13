@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
     .from("subscriptions")
     .select("renews_at, products, price, currency, account:accounts(label,provider), client:clients(name)")
     .eq("status", "active")
+    .is("deleted_at", null)
     .not("renews_at", "is", null)
     .lte("renews_at", addDaysISO(today, 30));
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

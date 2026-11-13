@@ -52,6 +52,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0005_license_kind_term_seats.sql", () => supabase.from("license_seats").select("id").limit(1)],
     ["0006_loyalty.sql", () => supabase.from("rewards").select("id").limit(1)],
     ["0007_reminders.sql", () => supabase.from("settings").select("user_id").limit(1)],
+    ["0008_subscription_trash.sql", () => supabase.from("subscriptions").select("deleted_at").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -63,11 +64,11 @@ export async function listClients(q = ""): Promise<Client[]> {
   const [clients, accounts, subs, lics] = await Promise.all([
     supabase.from("clients").select("*").order("name"),
     supabase.from("accounts").select("client_id"),
-    supabase.from("subscriptions").select("client_id"),
+    supabase.from("subscriptions").select("client_id,deleted_at"),
     supabase.from("licenses").select("client_id"),
   ]);
   fail(clients.error);
-  const count = (rows: any[] | null, id: string) => (rows ?? []).filter((r) => r.client_id === id).length;
+  const count = (rows: any[] | null, id: string) => (rows ?? []).filter((r) => r.client_id === id && !r.deleted_at).length;
 
   return (clients.data as any[])
     .map<Client>((r) => ({
@@ -102,7 +103,7 @@ async function loadAccounts(): Promise<Account[]> {
       .order("provider")
       .order("role")
       .order("label"),
-    supabase.from("subscriptions").select("account_id"),
+    supabase.from("subscriptions").select("account_id,deleted_at"),
   ]);
   fail(accounts.error);
   const rows = accounts.data as any[];
@@ -123,7 +124,7 @@ async function loadAccounts(): Promise<Account[]> {
     expires_at: r.contracted_at && r.term_years ? addYearsISO(r.contracted_at, r.term_years) : null,
     notes: decrypt(r.notes_enc),
     created_at: r.created_at,
-    subscriptions_count: (subs.data ?? []).filter((s: any) => s.account_id === r.id).length,
+    subscriptions_count: (subs.data ?? []).filter((s: any) => s.account_id === r.id && !s.deleted_at).length,
     children_count: rows.filter((c) => c.parent_account_id === r.id).length,
   }));
 }
@@ -157,6 +158,7 @@ export async function accountOptions(): Promise<Option[]> {
 }
 
 // ---------------------------------------------------------------- Suscripciones
+/** Lista suscripciones. Las eliminadas (papelera) solo aparecen con `status: "deleted"`. */
 export async function listSubscriptions(filters: { q?: string; status?: string } = {}): Promise<Subscription[]> {
   const { supabase } = await requireUser();
   const { data, error } = await supabase
@@ -185,12 +187,14 @@ export async function listSubscriptions(filters: { q?: string; status?: string }
       promo_months: Number(r.promo_months ?? 0),
       renewals: Number(r.renewals ?? 0),
       status: r.status,
+      deleted_at: r.deleted_at ?? null,
       notes: decrypt(r.notes_enc),
       created_at: r.created_at,
     }))
+    .filter((s) => (filters.status === "deleted" ? s.deleted_at !== null : s.deleted_at === null))
     .filter(
       (s) =>
-        (!filters.status || s.status === filters.status) &&
+        (!filters.status || filters.status === "deleted" || s.status === filters.status) &&
         matches(filters.q ?? "", [s.account_label, s.client_name, s.email, s.products.join(" "), s.notes, s.account_provider]),
     );
 }
@@ -277,6 +281,7 @@ export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
     stampsByClient.set(clientId, list);
   };
   for (const s of (subs.data ?? []) as any[]) {
+    if (s.deleted_at) continue; // en la papelera
     const label = (s.products ?? []).join(", ") || "Suscripción";
     push(s.client_id, { date: s.purchased_at ?? s.created_at?.slice(0, 10) ?? null, label, kind: "subscription" });
     for (let i = 0; i < Number(s.renewals ?? 0); i++) {

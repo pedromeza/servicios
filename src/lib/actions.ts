@@ -291,9 +291,35 @@ export async function renewSubscription(id: string): Promise<ActionState> {
   return { ok: true };
 }
 
+/** Manda la suscripción a la papelera (se oculta; se puede restaurar desde el filtro "Eliminadas"). */
 export async function deleteSubscription(id: string): Promise<ActionState> {
   const { supabase } = await requireUser();
-  const { error } = await supabase.from("subscriptions").delete().eq("id", id);
+  const { error } = await supabase.from("subscriptions").update({ deleted_at: new Date().toISOString() }).eq("id", id);
+  if (error) {
+    // Migración 0008 pendiente (no existe deleted_at): se borra como antes.
+    if (/deleted_at|schema cache/i.test(error.message)) {
+      const hard = await supabase.from("subscriptions").delete().eq("id", id);
+      if (hard.error) return { ok: false, error: hard.error.message };
+    } else {
+      return { ok: false, error: error.message };
+    }
+  }
+  refresh();
+  return { ok: true };
+}
+
+export async function restoreSubscription(id: string): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("subscriptions").update({ deleted_at: null }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
+/** Borrado definitivo, solo desde la papelera. */
+export async function purgeSubscription(id: string): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("subscriptions").delete().eq("id", id).not("deleted_at", "is", null);
   if (error) return { ok: false, error: error.message };
   refresh();
   return { ok: true };
