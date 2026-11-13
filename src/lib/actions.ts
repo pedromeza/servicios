@@ -10,6 +10,7 @@ import { requireUser } from "./auth";
 import { decrypt, encrypt, keyHint } from "./crypto";
 import { addMonthsISO, addYearsISO, todayISO } from "./format";
 import { LOYALTY } from "./loyalty";
+import { normalizeName } from "./names";
 import { MAX_LICENSE_SEATS } from "./types";
 
 export type ActionState = { ok: boolean; error?: string; errors?: Record<string, string> } | null;
@@ -97,6 +98,11 @@ export async function saveClient(_prev: ActionState, fd: FormData): Promise<Acti
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
   const d = parsed.data;
   const { supabase } = await requireUser();
+  // No permitir dos clientes con el mismo nombre (ignorando mayúsculas, acentos y espacios).
+  const existing = await supabase.from("clients").select("id,name");
+  if (existing.error) return { ok: false, error: existing.error.message };
+  const dup = (existing.data as { id: string; name: string }[]).find((c) => c.id !== d.id && normalizeName(c.name) === normalizeName(d.name));
+  if (dup) return { ok: false, errors: { name: `Ya existe un cliente registrado como “${dup.name}”.` } };
   const payload = { name: d.name, contact_enc: encrypt(d.contact), notes_enc: encrypt(d.notes) };
   const { error } = d.id
     ? await supabase.from("clients").update(payload).eq("id", d.id)

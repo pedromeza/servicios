@@ -1,26 +1,64 @@
 "use client";
 
-import { useActionState, useEffect } from "react";
+import { AlertTriangle, Info } from "lucide-react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveClient, type ActionState } from "@/lib/actions";
+import { findSimilarNames } from "@/lib/names";
 import type { Client } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
-export function ClientForm({ client, onDone, onCancel }: { client: Client | null; onDone: () => void; onCancel: () => void }) {
+export function ClientForm({
+  client,
+  existingNames,
+  onDone,
+  onCancel,
+}: {
+  client: Client | null;
+  existingNames: string[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
   const [state, action] = useActionState<ActionState, FormData>(saveClient, null);
+  const [name, setName] = useState(client?.name ?? "");
   useEffect(() => {
     if (state?.ok) onDone();
   }, [state, onDone]);
   const e = state?.errors ?? {};
 
+  // Aviso en vivo: nombre idéntico (bloquea) o parecido (solo avisa). Al editar, el propio nombre no cuenta.
+  const { exact, similar } = useMemo(() => findSimilarNames(name, existingNames, client?.name), [name, existingNames, client?.name]);
+
   return (
     <form action={action} className="space-y-4">
       <input type="hidden" name="id" value={client?.id ?? ""} />
       <FormError message={state?.error} />
-      <Field label="Nombre o empresa" error={e.name}>
-        <Input name="name" defaultValue={client?.name} required autoFocus placeholder="Ej. Constructora Ríos SA de CV" />
+      <Field label="Nombre o empresa" error={e.name ?? (exact ? `Ya existe un cliente registrado como “${exact}”.` : undefined)}>
+        <Input
+          name="name"
+          value={name}
+          onChange={(ev) => setName(ev.target.value)}
+          required
+          autoFocus
+          placeholder="Ej. Constructora Ríos SA de CV"
+          aria-invalid={Boolean(exact)}
+          className={exact ? "border-red-400 focus:border-red-500 focus:ring-red-500/15" : undefined}
+        />
       </Field>
+      {exact ? (
+        <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+          Ese cliente ya está registrado. Búscalo en la lista y edítalo en lugar de crearlo de nuevo.
+        </p>
+      ) : similar.length > 0 ? (
+        <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          <Info size={16} className="mt-0.5 shrink-0" />
+          <span>
+            ¿Será el mismo? Ya tienes: {similar.map((s) => `“${s}”`).join(", ")}.
+          </span>
+        </p>
+      ) : null}
       <Field label="Contacto" error={e.contact} hint="Teléfono, correo, WhatsApp… Se guarda cifrado.">
         <Input name="contact" defaultValue={client?.contact ?? ""} placeholder="55 1234 5678 · contacto@empresa.com" />
       </Field>
@@ -31,7 +69,7 @@ export function ClientForm({ client, onDone, onCancel }: { client: Client | null
         <Button variant="secondary" onClick={onCancel}>
           Cancelar
         </Button>
-        <SubmitButton>{client ? "Guardar cambios" : "Crear cliente"}</SubmitButton>
+        <SubmitButton disabled={Boolean(exact)}>{client ? "Guardar cambios" : "Crear cliente"}</SubmitButton>
       </div>
     </form>
   );

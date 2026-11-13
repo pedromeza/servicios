@@ -11,7 +11,7 @@ import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { ClientForm } from "./ClientForm";
 
-export function ClientsManager({ clients, total }: { clients: Client[]; total: number }) {
+export function ClientsManager({ clients, total, allNames }: { clients: Client[]; total: number; allNames: string[] }) {
   const [editing, setEditing] = useState<Client | "new" | null>(null);
   const [deleting, setDeleting] = useState<Client | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -86,7 +86,7 @@ export function ClientsManager({ clients, total }: { clients: Client[]; total: n
       </Card>
 
       <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nuevo cliente" : "Editar cliente"}>
-        <ClientForm key={nonce} client={editing === "new" ? null : editing} onDone={close} onCancel={close} />
+        <ClientForm key={nonce} client={editing === "new" ? null : editing} existingNames={allNames} onDone={close} onCancel={close} />
       </Dialog>
       <ConfirmDialog
         open={deleting !== null}
