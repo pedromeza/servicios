@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
+import { Pagination } from "@/components/ui/Pagination";
+import type { Page } from "@/lib/paging";
 import { ClientForm } from "./ClientForm";
 
-export function ClientsManager({ clients, total, allNames }: { clients: Client[]; total: number; allNames: string[] }) {
+export function ClientsManager({ clients, paging, total, allNames }: { clients: Client[]; paging: Page; total: number; allNames: string[] }) {
   const [editing, setEditing] = useState<Client | "new" | null>(null);
   const [deleting, setDeleting] = useState<Client | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -44,6 +46,7 @@ export function ClientsManager({ clients, total, allNames }: { clients: Client[]
             action={total === 0 ? <Button onClick={() => open("new")}>Crear el primero</Button> : undefined}
           />
         ) : (
+          <>
           <Table>
             <thead className="border-b border-navy-100">
               <tr>
@@ -82,6 +85,8 @@ export function ClientsManager({ clients, total, allNames }: { clients: Client[]
               ))}
             </tbody>
           </Table>
+          <Pagination paging={paging} label="clientes" />
+          </>
         )}
       </Card>
 

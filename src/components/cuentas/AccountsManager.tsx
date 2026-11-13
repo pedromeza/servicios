@@ -12,16 +12,20 @@ import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
+import { Pagination } from "@/components/ui/Pagination";
+import type { Page } from "@/lib/paging";
 import { SecretField } from "@/components/ui/SecretField";
 import { AccountForm } from "./AccountForm";
 
 export function AccountsManager({
   accounts,
+  paging,
   total,
   admins,
   clients,
 }: {
   accounts: Account[];
+  paging: Page;
   total: number;
   admins: Option[];
   clients: Option[];
@@ -63,6 +67,7 @@ export function AccountsManager({
             action={total === 0 ? <Button onClick={() => open("new")}>Crear la primera</Button> : undefined}
           />
         ) : (
+          <>
           <Table>
             <thead className="border-b border-navy-100">
               <tr>
@@ -135,6 +140,8 @@ export function AccountsManager({
               ))}
             </tbody>
           </Table>
+          <Pagination paging={paging} label="cuentas" />
+          </>
         )}
       </Card>
 

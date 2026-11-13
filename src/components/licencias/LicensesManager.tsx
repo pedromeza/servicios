@@ -11,10 +11,24 @@ import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
+import { Pagination } from "@/components/ui/Pagination";
+import type { Page } from "@/lib/paging";
 import { SecretField } from "@/components/ui/SecretField";
 import { LicenseForm } from "./LicenseForm";
 
-export function LicensesManager({ licenses, total, available, clients }: { licenses: License[]; total: number; available: number; clients: Option[] }) {
+export function LicensesManager({
+  licenses,
+  paging,
+  total,
+  available,
+  clients,
+}: {
+  licenses: License[];
+  paging: Page;
+  total: number;
+  available: number;
+  clients: Option[];
+}) {
   const [editing, setEditing] = useState<License | "new" | null>(null);
   const [deleting, setDeleting] = useState<License | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -53,6 +67,7 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
             action={total === 0 ? <Button onClick={() => open("new")}>Guardar la primera</Button> : undefined}
           />
         ) : (
+          <>
           <Table>
             <thead className="border-b border-navy-100">
               <tr>
@@ -161,6 +176,8 @@ export function LicensesManager({ licenses, total, available, clients }: { licen
               ))}
             </tbody>
           </Table>
+          <Pagination paging={paging} label="licencias" />
+          </>
         )}
       </Card>
 

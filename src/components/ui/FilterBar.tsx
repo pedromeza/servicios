@@ -19,6 +19,7 @@ export function FilterBar({ placeholder, filters = [] }: { placeholder: string; 
     const next = new URLSearchParams(params.toString());
     if (value) next.set(key, value);
     else next.delete(key);
+    next.delete("page"); // cualquier cambio de búsqueda o filtro vuelve a la primera página
     router.replace(`${pathname}${next.toString() ? `?${next}` : ""}`);
   };
 
@@ -30,7 +31,7 @@ export function FilterBar({ placeholder, filters = [] }: { placeholder: string; 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
 
-  const hasFilters = [...params.keys()].length > 0;
+  const hasFilters = [...params.keys()].some((k) => k !== "page");
 
   return (
     <div className="mb-4 flex flex-wrap items-center gap-2">

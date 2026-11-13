@@ -6,10 +6,12 @@ import { LOYALTY, type LoyaltyCard } from "@/lib/loyalty";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
+import { Pagination } from "@/components/ui/Pagination";
+import type { Page } from "@/lib/paging";
 import { LoyaltyCardView } from "./LoyaltyCardView";
 import { RewardForm } from "./RewardForm";
 
-export function LoyaltyBoard({ cards, total }: { cards: LoyaltyCard[]; total: number }) {
+export function LoyaltyBoard({ cards, paging, total }: { cards: LoyaltyCard[]; paging: Page; total: number }) {
   const [granting, setGranting] = useState<LoyaltyCard | null>(null);
   const [nonce, setNonce] = useState(0);
   const open = (c: LoyaltyCard) => {
@@ -35,6 +37,11 @@ export function LoyaltyBoard({ cards, total }: { cards: LoyaltyCard[]; total: nu
       </div>
 
       <FilterBar placeholder="Buscar cliente…" />
+      {paging.pages > 1 && (
+        <Card className="mb-4">
+          <Pagination paging={paging} label="clientes" />
+        </Card>
+      )}
 
       {cards.length === 0 ? (
         <Card>

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { LicensesManager } from "@/components/licencias/LicensesManager";
 import { clientOptions, listLicenses } from "@/lib/data";
+import { paginate } from "@/lib/paging";
 
 export const metadata: Metadata = { title: "Licencias" };
 
@@ -11,9 +12,11 @@ export default async function LicenciasPage({ searchParams }: PageProps<"/licenc
   const filters = { q: s(sp.q), status: s(sp.status), kind: s(sp.kind), term: s(sp.term) };
   const [all, clients] = await Promise.all([listLicenses(), clientOptions()]);
   const filtered = Object.values(filters).some(Boolean) ? await listLicenses(filters) : all;
+  const { items, paging } = paginate(filtered, s(sp.page) || undefined);
   return (
     <LicensesManager
-      licenses={filtered}
+      licenses={items}
+      paging={paging}
       total={all.length}
       available={all.filter((l) => l.status === "available").length}
       clients={clients}

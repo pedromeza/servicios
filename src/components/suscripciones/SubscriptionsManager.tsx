@@ -11,15 +11,19 @@ import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
+import { Pagination } from "@/components/ui/Pagination";
+import type { Page } from "@/lib/paging";
 import { SubscriptionForm } from "./SubscriptionForm";
 
 export function SubscriptionsManager({
   subscriptions,
+  paging,
   total,
   accounts,
   clients,
 }: {
   subscriptions: Subscription[];
+  paging: Page;
   total: number;
   accounts: Option[];
   clients: Option[];
@@ -72,6 +76,7 @@ export function SubscriptionsManager({
             action={total === 0 && accounts.length > 0 ? <Button onClick={() => open("new")}>Registrar la primera</Button> : undefined}
           />
         ) : (
+          <>
           <Table>
             <thead className="border-b border-navy-100">
               <tr>
@@ -163,6 +168,8 @@ export function SubscriptionsManager({
               })}
             </tbody>
           </Table>
+          <Pagination paging={paging} label="suscripciones" />
+          </>
         )}
       </Card>
 
