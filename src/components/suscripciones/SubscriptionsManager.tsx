@@ -98,7 +98,11 @@ export function SubscriptionsManager({
                   <tr key={s.id} className="group hover:bg-navy-50/60">
                     <Td>
                       <div className="font-medium text-navy-900">{s.client_name ?? <span className="font-normal text-slate-400">—</span>}</div>
-                      {s.email && <div className="text-xs text-slate-400">{s.email}</div>}
+                      {s.emails.map((e) => (
+                        <div key={e} className="text-xs text-slate-400">
+                          {e}
+                        </div>
+                      ))}
                     </Td>
                     <Td>
                       <div className="text-slate-800">{s.account_label}</div>

@@ -41,7 +41,7 @@ export function RemindersManager({
   const [results, setResults] = useState<SendResult[] | null>(null);
   const [pending, start] = useTransition();
 
-  const withEmail = candidates.filter((c) => c.email);
+  const withEmail = candidates.filter((c) => c.emails.length > 0);
   const allSelectable = withEmail.map((c) => c.subscription_id);
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -161,7 +161,7 @@ export function RemindersManager({
                         type="checkbox"
                         className="accent-brand"
                         aria-label={`Seleccionar ${c.client_name}`}
-                        disabled={!c.email}
+                        disabled={c.emails.length === 0}
                         checked={selected.has(c.subscription_id)}
                         onChange={() => toggle(c.subscription_id)}
                       />
@@ -171,10 +171,14 @@ export function RemindersManager({
                       {c.platform && <div className="text-xs text-slate-400">{c.platform}</div>}
                     </Td>
                     <Td>
-                      {c.email ? (
-                        <span className="flex items-center gap-1 break-all text-slate-700">
-                          <Mail size={13} className="shrink-0 text-slate-400" /> {c.email}
-                        </span>
+                      {c.emails.length > 0 ? (
+                        <div className="space-y-0.5">
+                          {c.emails.map((e) => (
+                            <span key={e} className="flex items-center gap-1 break-all text-slate-700">
+                              <Mail size={13} className="shrink-0 text-slate-400" /> {e}
+                            </span>
+                          ))}
+                        </div>
                       ) : (
                         <span className="flex items-center gap-1 text-xs text-red-600">
                           <MailX size={13} /> Sin correo
@@ -204,7 +208,7 @@ export function RemindersManager({
                     </Td>
                     <Td>
                       <div className="flex justify-end">
-                        <Button size="sm" variant="secondary" disabled={!c.email || !resendReady || pending} onClick={() => setConfirm([c.subscription_id])}>
+                        <Button size="sm" variant="secondary" disabled={c.emails.length === 0 || !resendReady || pending} onClick={() => setConfirm([c.subscription_id])}>
                           <Send size={13} /> Enviar
                         </Button>
                       </div>

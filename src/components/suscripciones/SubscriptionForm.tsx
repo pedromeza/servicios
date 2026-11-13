@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveSubscription, type ActionState } from "@/lib/actions";
+import { splitEmails } from "@/lib/emails";
 import { addMonthsISO, addYearsISO, todayISO } from "@/lib/format";
 import { ACCOUNT_TERMS, CURRENCIES, PRODUCTS_BY_PROVIDER, SUB_PLANS, SUB_STATUS, type Option, type Provider, type Subscription } from "@/lib/types";
 
@@ -40,6 +41,10 @@ export function SubscriptionForm({
   const [accountId, setAccountId] = useState(sub?.account_id ?? accounts[0]?.value ?? "");
   const [plan, setPlan] = useState<string>(sub?.plan ?? "individual");
   const [status, setStatus] = useState<string>(sub?.status ?? "active");
+  const [emailText, setEmailText] = useState<string>(sub?.email ?? "");
+  const [seatsText, setSeatsText] = useState<string>(String(sub?.seats ?? 1));
+  const emailCount = splitEmails(emailText).length;
+  const seatCount = Math.max(1, Math.floor(Number(seatsText) || 1));
   const [purchasedAt, setPurchasedAt] = useState<string>(sub?.purchased_at ?? todayISO());
   const [renewsAt, setRenewsAt] = useState<string>(sub?.renews_at ?? "");
   const [promo, setPromo] = useState<string>(sub?.promo_months ? String(sub.promo_months) : "");
@@ -85,8 +90,25 @@ export function SubscriptionForm({
         </Field>
       </div>
 
-      <Field label="Correo de la suscripción" error={e.email} hint="Usuario al que está asignado el puesto. Se guarda cifrado.">
-        <Input name="email" type="email" inputMode="email" autoComplete="off" defaultValue={sub?.email ?? ""} placeholder="usuario@correo.com" />
+      <Field
+        label="Correos de la suscripción"
+        error={e.emails}
+        hint={
+          emailCount > 1
+            ? `${emailCount} correos → ${Math.max(emailCount, seatCount)} puestos. Todos reciben los recordatorios. Se guardan cifrados.`
+            : "Uno o varios, separados por coma. Si son varios, los puestos se ajustan solos. Se guardan cifrados."
+        }
+      >
+        <Textarea
+          name="email"
+          inputMode="email"
+          autoComplete="off"
+          value={emailText}
+          onChange={(ev) => setEmailText(ev.target.value)}
+          placeholder="usuario1@correo.com, usuario2@correo.com"
+          className="min-h-[44px]"
+          rows={emailCount > 1 ? Math.min(6, emailCount) : 1}
+        />
       </Field>
 
       <Field label="Alcance" error={e.plan}>
@@ -124,8 +146,8 @@ export function SubscriptionForm({
         />
       </Field>
 
-      <Field label="Puestos / usuarios" error={e.seats}>
-        <Input name="seats" type="number" min={1} defaultValue={sub?.seats ?? 1} />
+      <Field label="Puestos / usuarios" error={e.seats} hint={emailCount > seatCount ? `Se guardará con ${emailCount}, uno por cada correo.` : undefined}>
+        <Input name="seats" type="number" min={1} value={seatsText} onChange={(ev) => setSeatsText(ev.target.value)} />
       </Field>
 
       <div className="grid gap-4 sm:grid-cols-3">

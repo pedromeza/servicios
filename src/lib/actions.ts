@@ -11,6 +11,7 @@ import { decrypt, encrypt, keyHint } from "./crypto";
 import { addMonthsISO, addYearsISO, todayISO } from "./format";
 import { LOYALTY } from "./loyalty";
 import { normalizeName } from "./names";
+import { splitEmails } from "./emails";
 import { sendEmail } from "./email";
 import { daysPhrase, DEFAULT_REMINDER, reminderHtml, SAMPLE_VARS, type ReminderSettings, type ReminderVars } from "./reminders";
 import { fmtDate, fmtMoney } from "./format";
@@ -199,7 +200,7 @@ const subscriptionSchema = z.object({
   id: z.uuid().nullable(),
   account_id: z.uuid("Elige la cuenta"),
   client_id: uuidOrNull,
-  email: z.email("Correo inválido").max(200).or(z.literal("")),
+  emails: z.array(z.email("Hay un correo inválido").max(200)).max(50, "Máximo 50 correos"),
   plan: z.enum(["individual", "suite"]),
   products: z.array(z.string().min(1).max(80)).min(1, "Marca al menos un programa"),
   seats: z.coerce.number().int("Debe ser entero").min(1, "Mínimo 1"),
@@ -225,7 +226,7 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
     id: orNull(str(fd, "id")),
     account_id: str(fd, "account_id"),
     client_id: orNull(str(fd, "client_id")),
-    email: str(fd, "email").toLowerCase(),
+    emails: splitEmails(str(fd, "email")),
     plan: str(fd, "plan") || "individual",
     products,
     seats: str(fd, "seats") || "1",
@@ -244,10 +245,11 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
   const payload = {
     account_id: d.account_id,
     client_id: d.client_id,
-    email_enc: encrypt(d.email),
+    email_enc: encrypt(d.emails.join(", ")),
     plan: d.plan,
     products: d.products,
-    seats: d.seats,
+    // Si hay más correos que puestos, los puestos crecen para cubrirlos.
+    seats: Math.max(d.seats, d.emails.length),
     purchased_at: d.purchased_at,
     cost: d.cost,
     price: d.price,
@@ -556,7 +558,7 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
       results.push({ subscription_id: id, client: "?", email: null, ok: false, error: "No es una suscripción activa con fecha de renovación." });
       continue;
     }
-    if (!c.email) {
+    if (c.emails.length === 0) {
       results.push({ subscription_id: id, client: c.client_name, email: null, ok: false, error: "Sin correo: agrégalo en la suscripción o en el contacto del cliente." });
       continue;
     }
@@ -571,11 +573,11 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
       whatsapp: settings.whatsapp || "nuestro WhatsApp",
     };
     const mail = reminderHtml(settings, vars);
-    const res = await sendEmail(c.email, mail.subject, mail.html, mail.text);
+    const res = await sendEmail(c.emails, mail.subject, mail.html, mail.text);
     if (res.ok) {
-      await supabase.from("reminders").insert({ subscription_id: id, to_email_enc: encrypt(c.email), kind: "client" });
+      await supabase.from("reminders").insert({ subscription_id: id, to_email_enc: encrypt(c.emails.join(", ")), kind: "client" });
     }
-    results.push({ subscription_id: id, client: c.client_name, email: c.email, ok: res.ok, error: res.ok ? undefined : res.error });
+    results.push({ subscription_id: id, client: c.client_name, email: c.emails.join(", "), ok: res.ok, error: res.ok ? undefined : res.error });
   }
   refresh();
   return { results };

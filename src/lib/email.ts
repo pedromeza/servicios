@@ -72,7 +72,7 @@ export function renewalEmailHtml(items: RenewalItem[], appUrl: string) {
 }
 
 /** Envío genérico por el proveedor configurado. Devuelve el error como texto para mostrarlo en pantalla. */
-export async function sendEmail(to: string, subject: string, html: string, text?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function sendEmail(to: string | string[], subject: string, html: string, text?: string): Promise<{ ok: true } | { ok: false; error: string }> {
   const { provider, from } = emailProvider();
   // Las respuestas del cliente van a tu correo real, aunque el remitente sea el de avisos.
   const replyTo = process.env.REPLY_TO ?? process.env.NOTIFY_EMAIL;

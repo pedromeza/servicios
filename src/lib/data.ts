@@ -5,6 +5,7 @@ import { requireUser } from "./auth";
 import { addYearsISO, daysUntil } from "./format";
 import { buildCard, type LoyaltyCard, type Reward, type Stamp } from "./loyalty";
 import { DEFAULT_REMINDER, type ReminderSettings } from "./reminders";
+import { splitEmails } from "./emails";
 import type {
   Account,
   AuditEntry,
@@ -172,6 +173,7 @@ export async function listSubscriptions(filters: { q?: string; status?: string }
       client_id: r.client_id,
       client_name: r.client?.name ?? null,
       email: decrypt(r.email_enc),
+      emails: splitEmails(decrypt(r.email_enc)),
       plan: r.plan,
       products: r.products ?? [],
       seats: r.seats,
@@ -356,7 +358,7 @@ export async function renewalCandidates(days: number): Promise<ReminderCandidate
         client_id: s.client_id,
         client_name: s.client_name ?? "Sin cliente",
         platform: c?.platform ?? null,
-        email: s.email ?? fromContact,
+        emails: s.emails.length > 0 ? s.emails : fromContact ? [fromContact] : [],
         products: s.products,
         purchased_at: s.purchased_at,
         renews_at: s.renews_at as string,

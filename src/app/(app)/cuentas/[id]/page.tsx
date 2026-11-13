@@ -112,7 +112,11 @@ export default async function CuentaDetallePage({ params }: PageProps<"/cuentas/
                         </Td>
                         <Td>
                           <div>{s.client_name ?? "—"}</div>
-                          {s.email && <div className="text-xs text-slate-400">{s.email}</div>}
+                          {s.emails.map((e) => (
+                            <div key={e} className="text-xs text-slate-400">
+                              {e}
+                            </div>
+                          ))}
                         </Td>
                         <Td>
                           <div>{fmtDate(s.renews_at)}</div>

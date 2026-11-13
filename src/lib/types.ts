@@ -112,7 +112,8 @@ export type Subscription = {
   account_provider: string;
   client_id: string | null;
   client_name: string | null;
-  email: string | null;
+  email: string | null; // todos los correos, separados por coma (como se capturaron)
+  emails: string[];
   plan: SubPlan;
   products: string[];
   seats: number;
@@ -160,7 +161,7 @@ export type ReminderCandidate = {
   client_id: string | null;
   client_name: string;
   platform: string | null;
-  email: string | null; // correo de la suscripción, o el del contacto del cliente si lo tiene
+  emails: string[]; // correos de la suscripción, o el del contacto del cliente si lo tiene
   products: string[];
   purchased_at: string | null;
   renews_at: string;
