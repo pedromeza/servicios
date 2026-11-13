@@ -76,6 +76,8 @@ export type Client = {
   id: string;
   name: string;
   contact: string | null;
+  platform: string | null;
+  platform_ref: string | null;
   notes: string | null;
   created_at: string;
   accounts_count: number;
@@ -151,6 +153,22 @@ export type License = {
   used_at: string | null;
   notes: string | null;
   created_at: string;
+};
+
+export type ReminderCandidate = {
+  subscription_id: string;
+  client_id: string | null;
+  client_name: string;
+  platform: string | null;
+  email: string | null; // correo de la suscripción, o el del contacto del cliente si lo tiene
+  products: string[];
+  purchased_at: string | null;
+  renews_at: string;
+  days: number;
+  price: number;
+  currency: string;
+  last_reminder_at: string | null;
+  reminders_sent: number;
 };
 
 export type AuditEntry = {

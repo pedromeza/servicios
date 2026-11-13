@@ -4,11 +4,13 @@ import { decrypt } from "./crypto";
 import { requireUser } from "./auth";
 import { addYearsISO, daysUntil } from "./format";
 import { buildCard, type LoyaltyCard, type Reward, type Stamp } from "./loyalty";
+import { DEFAULT_REMINDER, type ReminderSettings } from "./reminders";
 import type {
   Account,
   AuditEntry,
   Client,
   DashboardData,
+  ReminderCandidate,
   License,
   LicenseSeat,
   Option,
@@ -48,6 +50,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0004_subscription_promo.sql", () => supabase.from("subscriptions").select("promo_months").limit(1)],
     ["0005_license_kind_term_seats.sql", () => supabase.from("license_seats").select("id").limit(1)],
     ["0006_loyalty.sql", () => supabase.from("rewards").select("id").limit(1)],
+    ["0007_reminders.sql", () => supabase.from("settings").select("user_id").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -70,13 +73,15 @@ export async function listClients(q = ""): Promise<Client[]> {
       id: r.id,
       name: r.name,
       contact: decrypt(r.contact_enc),
+      platform: r.platform ?? null,
+      platform_ref: r.platform_ref ?? null,
       notes: decrypt(r.notes_enc),
       created_at: r.created_at,
       accounts_count: count(accounts.data, r.id),
       subscriptions_count: count(subs.data, r.id),
       licenses_count: count(lics.data, r.id),
     }))
-    .filter((c) => matches(q, [c.name, c.contact, c.notes]));
+    .filter((c) => matches(q, [c.name, c.contact, c.notes, c.platform, c.platform_ref]));
 }
 
 export async function clientOptions(): Promise<Option[]> {
@@ -300,6 +305,70 @@ export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
     .map((c) => buildCard(c.id, c.name, stampsByClient.get(c.id) ?? [], rewardsByClient.get(c.id) ?? []))
     .filter((card) => matches(q, [card.client_name]))
     .sort((a, b) => b.rewards_available - a.rewards_available || b.total_stamps - a.total_stamps || a.client_name.localeCompare(b.client_name));
+}
+
+// ---------------------------------------------------------------- Recordatorios
+export async function getReminderSettings(): Promise<ReminderSettings> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.from("settings").select("*").maybeSingle();
+  if (error && !isMissingSchema(error)) fail(error);
+  const r = (data ?? {}) as Record<string, unknown>;
+  return {
+    reminder_subject: (r.reminder_subject as string) || DEFAULT_REMINDER.reminder_subject,
+    reminder_body: (r.reminder_body as string) || DEFAULT_REMINDER.reminder_body,
+    reminder_button: (r.reminder_button as string) || DEFAULT_REMINDER.reminder_button,
+    payment_url: (r.payment_url as string) || "",
+    whatsapp: (r.whatsapp as string) || "",
+    logo_url: (r.logo_url as string) || "",
+    reminder_days: Number(r.reminder_days ?? DEFAULT_REMINDER.reminder_days),
+  };
+}
+
+const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+
+/** Suscripciones activas que vencen dentro de `days` días (o ya vencidas), con el correo al que avisar. */
+export async function renewalCandidates(days: number): Promise<ReminderCandidate[]> {
+  const { supabase } = await requireUser();
+  const [subs, clients, sent] = await Promise.all([
+    listSubscriptions({ status: "active" }),
+    supabase.from("clients").select("id,contact_enc,platform"),
+    supabase.from("reminders").select("subscription_id,sent_at").eq("kind", "client").order("sent_at", { ascending: false }),
+  ]);
+  fail(clients.error);
+  if (sent.error && !isMissingSchema(sent.error)) fail(sent.error);
+  const byClient = new Map((clients.data as any[]).map((c) => [c.id, c]));
+  const sentBySub = new Map<string, { last: string; count: number }>();
+  for (const r of (sent.error ? [] : (sent.data ?? [])) as any[]) {
+    const cur = sentBySub.get(r.subscription_id);
+    if (cur) cur.count += 1;
+    else sentBySub.set(r.subscription_id, { last: r.sent_at, count: 1 });
+  }
+  return subs
+    .filter((s) => s.renews_at !== null)
+    .map<ReminderCandidate>((s) => {
+      const c = s.client_id ? byClient.get(s.client_id) : null;
+      const contact = c ? decrypt(c.contact_enc) : null;
+      const fromContact = contact?.match(EMAIL_RE)?.[0] ?? null;
+      const d = daysUntil(s.renews_at);
+      const hist = sentBySub.get(s.id);
+      return {
+        subscription_id: s.id,
+        client_id: s.client_id,
+        client_name: s.client_name ?? "Sin cliente",
+        platform: c?.platform ?? null,
+        email: s.email ?? fromContact,
+        products: s.products,
+        purchased_at: s.purchased_at,
+        renews_at: s.renews_at as string,
+        days: d ?? 0,
+        price: s.price,
+        currency: s.currency,
+        last_reminder_at: hist?.last ?? null,
+        reminders_sent: hist?.count ?? 0,
+      };
+    })
+    .filter((c) => c.days <= days)
+    .sort((a, b) => a.days - b.days);
 }
 
 // ---------------------------------------------------------------- Bitácora

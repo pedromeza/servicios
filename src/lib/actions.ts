@@ -11,6 +11,10 @@ import { decrypt, encrypt, keyHint } from "./crypto";
 import { addMonthsISO, addYearsISO, todayISO } from "./format";
 import { LOYALTY } from "./loyalty";
 import { normalizeName } from "./names";
+import { sendEmail } from "./email";
+import { daysPhrase, DEFAULT_REMINDER, reminderHtml, SAMPLE_VARS, type ReminderSettings, type ReminderVars } from "./reminders";
+import { fmtDate, fmtMoney } from "./format";
+import { getReminderSettings, renewalCandidates } from "./data";
 import { MAX_LICENSE_SEATS } from "./types";
 
 export type ActionState = { ok: boolean; error?: string; errors?: Record<string, string> } | null;
@@ -85,6 +89,8 @@ const clientSchema = z.object({
   id: z.uuid().nullable(),
   name: z.string().min(1, "El nombre es obligatorio").max(120, "Máximo 120 caracteres"),
   contact: z.string().max(500, "Máximo 500 caracteres"),
+  platform: z.string().max(60).nullable(),
+  platform_ref: z.string().max(120).nullable(),
   notes: z.string().max(2000, "Máximo 2000 caracteres"),
 });
 
@@ -93,6 +99,8 @@ export async function saveClient(_prev: ActionState, fd: FormData): Promise<Acti
     id: orNull(str(fd, "id")),
     name: str(fd, "name"),
     contact: str(fd, "contact"),
+    platform: orNull(str(fd, "platform")),
+    platform_ref: orNull(str(fd, "platform_ref")),
     notes: str(fd, "notes"),
   });
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
@@ -103,7 +111,7 @@ export async function saveClient(_prev: ActionState, fd: FormData): Promise<Acti
   if (existing.error) return { ok: false, error: existing.error.message };
   const dup = (existing.data as { id: string; name: string }[]).find((c) => c.id !== d.id && normalizeName(c.name) === normalizeName(d.name));
   if (dup) return { ok: false, errors: { name: `Ya existe un cliente registrado como “${dup.name}”.` } };
-  const payload = { name: d.name, contact_enc: encrypt(d.contact), notes_enc: encrypt(d.notes) };
+  const payload = { name: d.name, contact_enc: encrypt(d.contact), platform: d.platform, platform_ref: d.platform_ref, notes_enc: encrypt(d.notes) };
   const { error } = d.id
     ? await supabase.from("clients").update(payload).eq("id", d.id)
     : await supabase.from("clients").insert(payload);
@@ -470,6 +478,93 @@ export async function deleteReward(id: string): Promise<ActionState> {
   if (error) return { ok: false, error: error.message };
   refresh();
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- Recordatorios de renovación
+const settingsSchema = z.object({
+  reminder_subject: z.string().min(1, "Escribe el asunto").max(200),
+  reminder_body: z.string().min(1, "Escribe el mensaje").max(5000),
+  reminder_button: z.string().min(1, "Escribe el texto del botón").max(80),
+  payment_url: z.url("Debe ser un enlace completo, con https://").or(z.literal("")),
+  whatsapp: z.string().max(40),
+  logo_url: z.url("Debe ser un enlace completo, con https://").or(z.literal("")),
+  reminder_days: z.coerce.number().int().min(1, "Mínimo 1 día").max(365, "Máximo 365 días"),
+});
+
+function settingsFromForm(fd: FormData) {
+  return settingsSchema.safeParse({
+    reminder_subject: str(fd, "reminder_subject"),
+    reminder_body: fd.get("reminder_body")?.toString().replace(/\r\n/g, "\n").trim() ?? "",
+    reminder_button: str(fd, "reminder_button"),
+    payment_url: str(fd, "payment_url"),
+    whatsapp: str(fd, "whatsapp"),
+    logo_url: str(fd, "logo_url"),
+    reminder_days: str(fd, "reminder_days") || String(DEFAULT_REMINDER.reminder_days),
+  });
+}
+
+export async function saveReminderSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const parsed = settingsFromForm(fd);
+  if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
+  const { supabase, user } = await requireUser();
+  const { error } = await supabase.from("settings").upsert({ user_id: user.id, ...parsed.data, updated_at: new Date().toISOString() });
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
+/** Envía la plantilla (tal como está en el formulario, sin guardar) a tu propio correo con datos de ejemplo. */
+export async function sendReminderTest(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const parsed = settingsFromForm(fd);
+  if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
+  const { user } = await requireUser();
+  const to = process.env.NOTIFY_EMAIL || user.email;
+  if (!to) return { ok: false, error: "No sé a qué correo enviarte la prueba: define NOTIFY_EMAIL." };
+  const vars: ReminderVars = { ...SAMPLE_VARS, whatsapp: parsed.data.whatsapp || SAMPLE_VARS.whatsapp };
+  const mail = reminderHtml(parsed.data, vars);
+  const res = await sendEmail(to, `[PRUEBA] ${mail.subject}`, mail.html, mail.text);
+  if (!res.ok) return { ok: false, error: res.error };
+  return { ok: true, error: undefined, errors: { _sent_to: to } };
+}
+
+export type SendResult = { subscription_id: string; client: string; email: string | null; ok: boolean; error?: string };
+
+/** Envía el recordatorio guardado a los clientes de las suscripciones indicadas y lo registra. */
+export async function sendReminders(subscriptionIds: string[]): Promise<{ results: SendResult[] }> {
+  const ids = subscriptionIds.filter((id) => z.uuid().safeParse(id).success);
+  const { supabase } = await requireUser();
+  const settings: ReminderSettings = await getReminderSettings();
+  const candidates = await renewalCandidates(3650);
+  const results: SendResult[] = [];
+  for (const id of ids) {
+    const c = candidates.find((x) => x.subscription_id === id);
+    if (!c) {
+      results.push({ subscription_id: id, client: "?", email: null, ok: false, error: "No es una suscripción activa con fecha de renovación." });
+      continue;
+    }
+    if (!c.email) {
+      results.push({ subscription_id: id, client: c.client_name, email: null, ok: false, error: "Sin correo: agrégalo en la suscripción o en el contacto del cliente." });
+      continue;
+    }
+    const vars: ReminderVars = {
+      cliente: c.client_name,
+      programas: c.products.join(", ") || "tu programa",
+      fecha_compra: fmtDate(c.purchased_at),
+      fecha_renovacion: fmtDate(c.renews_at),
+      dias: daysPhrase(c.days),
+      precio: fmtMoney(c.price, c.currency),
+      plataforma: c.platform ?? "nuestra tienda",
+      whatsapp: settings.whatsapp || "nuestro WhatsApp",
+    };
+    const mail = reminderHtml(settings, vars);
+    const res = await sendEmail(c.email, mail.subject, mail.html, mail.text);
+    if (res.ok) {
+      await supabase.from("reminders").insert({ subscription_id: id, to_email_enc: encrypt(c.email), kind: "client" });
+    }
+    results.push({ subscription_id: id, client: c.client_name, email: c.email, ok: res.ok, error: res.ok ? undefined : res.error });
+  }
+  refresh();
+  return { results };
 }
 
 // ---------------------------------------------------------------- Migraciones

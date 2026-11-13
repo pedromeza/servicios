@@ -50,6 +50,17 @@ export function renewalEmailHtml(items: RenewalItem[], appUrl: string) {
   </div></body></html>`;
 }
 
+/** Envío genérico con Resend. Devuelve el error de Resend como texto para mostrarlo en pantalla. */
+export async function sendEmail(to: string, subject: string, html: string, text?: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.FROM_EMAIL ?? "PGPM MEX <onboarding@resend.dev>";
+  if (!apiKey) return { ok: false, error: "Falta RESEND_API_KEY en las variables de entorno." };
+  const resend = new Resend(apiKey);
+  const { error } = await resend.emails.send({ from, to, subject, html, text });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
 export async function sendRenewalEmail(items: RenewalItem[], appUrl: string) {
   const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.NOTIFY_EMAIL;

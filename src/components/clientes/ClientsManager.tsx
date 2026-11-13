@@ -61,6 +61,12 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
                 <tr key={c.id} className="group hover:bg-navy-50/60">
                   <Td>
                     <div className="font-medium text-navy-900">{c.name}</div>
+                    {(c.platform || c.platform_ref) && (
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        {c.platform}
+                        {c.platform_ref && <span className="text-slate-400"> · {c.platform_ref}</span>}
+                      </div>
+                    )}
                     {c.notes && <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400">{c.notes}</div>}
                   </Td>
                   <Td>{c.contact ?? <span className="text-slate-400">—</span>}</Td>

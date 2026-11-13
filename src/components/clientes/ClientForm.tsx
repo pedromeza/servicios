@@ -4,9 +4,10 @@ import { AlertTriangle, Info } from "lucide-react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { saveClient, type ActionState } from "@/lib/actions";
 import { findSimilarNames } from "@/lib/names";
+import { CLIENT_PLATFORMS } from "@/lib/reminders";
 import type { Client } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
+import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
 export function ClientForm({
@@ -59,9 +60,27 @@ export function ClientForm({
           </span>
         </p>
       ) : null}
-      <Field label="Contacto" error={e.contact} hint="Teléfono, correo, WhatsApp… Se guarda cifrado.">
+      <Field label="Contacto" error={e.contact} hint="Teléfono, correo, WhatsApp… Se guarda cifrado. Si incluye un correo, se usa para los recordatorios.">
         <Input name="contact" defaultValue={client?.contact ?? ""} placeholder="55 1234 5678 · contacto@empresa.com" />
       </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Plataforma" error={e.platform} hint="Por dónde llegó o compra.">
+          <Select name="platform" defaultValue={client?.platform ?? ""}>
+            <option value="">Sin especificar</option>
+            {CLIENT_PLATFORMS.map((p) => (
+              <option key={p} value={p}>
+                {p}
+              </option>
+            ))}
+            {client?.platform && !CLIENT_PLATFORMS.includes(client.platform as (typeof CLIENT_PLATFORMS)[number]) && (
+              <option value={client.platform}>{client.platform}</option>
+            )}
+          </Select>
+        </Field>
+        <Field label="Usuario o ID en la plataforma" error={e.platform_ref} hint="Ej. su apodo de Mercado Libre.">
+          <Input name="platform_ref" defaultValue={client?.platform_ref ?? ""} placeholder="Ej. JUANPEREZ2024" />
+        </Field>
+      </div>
       <Field label="Notas" error={e.notes} hint="Se guardan cifradas.">
         <Textarea name="notes" defaultValue={client?.notes ?? ""} />
       </Field>
