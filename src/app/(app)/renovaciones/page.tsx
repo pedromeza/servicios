@@ -11,6 +11,8 @@ export default async function RenovacionesPage({ searchParams }: PageProps<"/ren
   const candidates = await renewalCandidates(days);
   const fromEmail = process.env.FROM_EMAIL ?? "PGPM MEX <onboarding@resend.dev>";
   const testTo = process.env.NOTIFY_EMAIL ?? "";
+  const origin = process.env.APP_URL?.replace(/\/$/, "") ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
+  const defaultLogoUrl = origin ? `${origin}/logo-email.png` : "/logo-email.png";
   return (
     <RemindersManager
       settings={settings}
@@ -19,6 +21,7 @@ export default async function RenovacionesPage({ searchParams }: PageProps<"/ren
       fromEmail={fromEmail}
       testTo={testTo}
       resendReady={Boolean(process.env.RESEND_API_KEY)}
+      defaultLogoUrl={defaultLogoUrl}
     />
   );
 }

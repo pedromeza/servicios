@@ -503,6 +503,19 @@ function settingsFromForm(fd: FormData) {
   });
 }
 
+/** URL pública de la app (para imágenes del correo): APP_URL, el dominio de producción de Vercel o el origen de la petición. */
+async function appOrigin(): Promise<string> {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  return (await headers()).get("origin") ?? "";
+}
+
+/** Logo por defecto del correo: el PNG de PGPM MEX que se publica con la app. */
+async function defaultLogoUrl(): Promise<string> {
+  const origin = await appOrigin();
+  return origin ? `${origin}/logo-email.png` : "";
+}
+
 export async function saveReminderSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const parsed = settingsFromForm(fd);
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
@@ -521,7 +534,7 @@ export async function sendReminderTest(_prev: ActionState, fd: FormData): Promis
   const to = process.env.NOTIFY_EMAIL || user.email;
   if (!to) return { ok: false, error: "No sé a qué correo enviarte la prueba: define NOTIFY_EMAIL." };
   const vars: ReminderVars = { ...SAMPLE_VARS, whatsapp: parsed.data.whatsapp || SAMPLE_VARS.whatsapp };
-  const mail = reminderHtml(parsed.data, vars);
+  const mail = reminderHtml({ ...parsed.data, logo_url: parsed.data.logo_url || (await defaultLogoUrl()) }, vars);
   const res = await sendEmail(to, `[PRUEBA] ${mail.subject}`, mail.html, mail.text);
   if (!res.ok) return { ok: false, error: res.error };
   return { ok: true, error: undefined, errors: { _sent_to: to } };
@@ -533,7 +546,8 @@ export type SendResult = { subscription_id: string; client: string; email: strin
 export async function sendReminders(subscriptionIds: string[]): Promise<{ results: SendResult[] }> {
   const ids = subscriptionIds.filter((id) => z.uuid().safeParse(id).success);
   const { supabase } = await requireUser();
-  const settings: ReminderSettings = await getReminderSettings();
+  const saved = await getReminderSettings();
+  const settings: ReminderSettings = { ...saved, logo_url: saved.logo_url || (await defaultLogoUrl()) };
   const candidates = await renewalCandidates(3650);
   const results: SendResult[] = [];
   for (const id of ids) {

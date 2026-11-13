@@ -22,6 +22,7 @@ export function RemindersManager({
   fromEmail,
   testTo,
   resendReady,
+  defaultLogoUrl,
 }: {
   settings: ReminderSettings;
   candidates: ReminderCandidate[];
@@ -29,6 +30,7 @@ export function RemindersManager({
   fromEmail: string;
   testTo: string;
   resendReady: boolean;
+  defaultLogoUrl: string;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -74,7 +76,7 @@ export function RemindersManager({
       ) : null}
 
       <div className="mb-6">
-        <TemplateEditor settings={settings} testTo={testTo} resendReady={resendReady} />
+        <TemplateEditor settings={settings} testTo={testTo} resendReady={resendReady} defaultLogoUrl={defaultLogoUrl} />
       </div>
 
       <Card>

@@ -83,7 +83,7 @@ export function reminderHtml(s: ReminderSettings, vars: ReminderVars): { subject
     .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#0f172a">${escapeHtml(p).replace(/\n/g, "<br>")}</p>`)
     .join("");
   const logo = s.logo_url
-    ? `<img src="${escapeHtml(s.logo_url)}" alt="PGPM MEX" style="max-height:48px;display:block">`
+    ? `<img src="${escapeHtml(s.logo_url)}" alt="PGPM MEX" height="56" style="height:56px;max-width:100%;display:block">`
     : `<div style="font-size:22px;font-weight:800;letter-spacing:-0.3px;color:#fff">PGPM <span style="color:#f7941d">MEX</span></div>
        <div style="font-size:11px;color:#c9d4e8;letter-spacing:.14em;text-transform:uppercase">Soluciones digitales</div>`;
   const cta = s.payment_url

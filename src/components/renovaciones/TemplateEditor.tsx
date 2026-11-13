@@ -8,7 +8,17 @@ import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
 
-export function TemplateEditor({ settings, testTo, resendReady }: { settings: ReminderSettings; testTo: string; resendReady: boolean }) {
+export function TemplateEditor({
+  settings,
+  testTo,
+  resendReady,
+  defaultLogoUrl,
+}: {
+  settings: ReminderSettings;
+  testTo: string;
+  resendReady: boolean;
+  defaultLogoUrl: string;
+}) {
   const [form, setForm] = useState<ReminderSettings>(settings);
   const [saveState, saveAction, saving] = useActionState<ActionState, FormData>(saveReminderSettings, null);
   const [testState, testAction, testing] = useActionState<ActionState, FormData>(sendReminderTest, null);
@@ -17,7 +27,10 @@ export function TemplateEditor({ settings, testTo, resendReady }: { settings: Re
     setForm((f) => ({ ...f, [k]: k === "reminder_days" ? Number(ev.target.value) : ev.target.value }));
 
   // Vista previa en vivo con datos de ejemplo: lo que ves es exactamente lo que recibirá el cliente.
-  const preview = useMemo(() => reminderHtml(form, { ...SAMPLE_VARS, whatsapp: form.whatsapp || SAMPLE_VARS.whatsapp }), [form]);
+  const preview = useMemo(
+    () => reminderHtml({ ...form, logo_url: form.logo_url || defaultLogoUrl }, { ...SAMPLE_VARS, whatsapp: form.whatsapp || SAMPLE_VARS.whatsapp }),
+    [form, defaultLogoUrl],
+  );
 
   return (
     <Card>
@@ -56,7 +69,7 @@ export function TemplateEditor({ settings, testTo, resendReady }: { settings: Re
               <Input name="reminder_days" type="number" min={1} max={365} value={form.reminder_days} onChange={set("reminder_days")} />
             </Field>
           </div>
-          <Field label="Logo (opcional)" error={e.logo_url} hint="Enlace público a una imagen PNG o JPG. Si lo dejas vacío se usa el nombre PGPM MEX.">
+          <Field label="Logo (opcional)" error={e.logo_url} hint="Vacío = logotipo de PGPM MEX incluido en la app. Pon un enlace público a un PNG o JPG si quieres usar otro.">
             <Input name="logo_url" type="url" value={form.logo_url} onChange={set("logo_url")} placeholder="https://…/logo.png" />
           </Field>
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
