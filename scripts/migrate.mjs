@@ -9,17 +9,17 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { applyMigrations } from "./migrate-core.mjs";
+import { applyMigrations, candidateUrls } from "./migrate-core.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const url = process.env.DATABASE_URL;
-if (!url) {
-  console.warn("[migrate] DATABASE_URL no está definida; no se aplican migraciones. Hazlo desde el aviso de la app, a mano en Supabase > SQL Editor, o define la variable.");
+const urls = candidateUrls(process.env);
+if (urls.length === 0) {
+  console.warn("[migrate] Sin conexión configurada (SUPABASE_DB_PASSWORD o DATABASE_URL); no se aplican migraciones. Hazlo desde el aviso de la app o a mano en Supabase > SQL Editor.");
   process.exit(0);
 }
 
 const result = await applyMigrations({
-  url,
+  urls,
   dir: path.resolve(here, "..", "supabase", "migrations"),
   ssl: process.env.PGSSLMODE !== "disable", // para un Postgres local sin TLS: PGSSLMODE=disable
 });

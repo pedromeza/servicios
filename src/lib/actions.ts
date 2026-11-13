@@ -615,18 +615,19 @@ export type MigrateState = { ok: boolean; lines: string[] } | null;
 /** Aplica desde la app las migraciones pendientes usando DATABASE_URL (la misma lógica que el build). */
 export async function runMigrationsNow(): Promise<MigrateState> {
   await requireUser();
-  const url = process.env.DATABASE_URL;
-  if (!url) {
+  const { applyMigrations, candidateUrls } = await import("../../scripts/migrate-core.mjs");
+  const urls = candidateUrls(process.env);
+  if (urls.length === 0) {
     return {
       ok: false,
       lines: [
-        "DATABASE_URL no está configurada en Vercel (Settings → Environment Variables, entorno Production).",
-        "Cópiala de Supabase → Connect → Session pooler, con tu contraseña, y vuelve a desplegar.",
+        "No hay conexión a la base de datos configurada en Vercel (Settings → Environment Variables, entorno Production).",
+        "Lo más sencillo: agrega SUPABASE_DB_PASSWORD con la contraseña de la base de datos de Supabase y vuelve a desplegar.",
+        "Alternativa: DATABASE_URL con la URI del Session pooler de Supabase.",
       ],
     };
   }
-  const { applyMigrations } = await import("../../scripts/migrate-core.mjs");
-  const result = await applyMigrations({ url, dir: path.join(process.cwd(), "supabase", "migrations") });
+  const result = await applyMigrations({ urls, dir: path.join(process.cwd(), "supabase", "migrations") });
   refresh();
   return { ok: result.ok, lines: result.lines };
 }

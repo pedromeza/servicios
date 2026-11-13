@@ -31,7 +31,7 @@ export function SchemaNotice({ pending, hasDatabaseUrl }: { pending: string[]; h
               {running ? "Aplicando…" : "Aplicar migraciones ahora"}
             </Button>
             <span className="text-xs">
-              {hasDatabaseUrl ? "DATABASE_URL está configurada." : "DATABASE_URL no está configurada en este despliegue."}
+              {hasDatabaseUrl ? "Conexión a la base de datos configurada." : "Falta SUPABASE_DB_PASSWORD (o DATABASE_URL) en Vercel para aplicarlas solas."}
             </span>
           </div>
 

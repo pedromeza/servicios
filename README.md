@@ -37,8 +37,8 @@ Stack: Next.js 16 · Supabase (Postgres + Auth) · Resend · Vercel. Todo cabe e
 
 Para no tener que pegar SQL cada vez que el esquema cambia:
 
-1. En Supabase pulsa **Connect** (arriba), elige **Session pooler** y copia la URI. Sustituye `[YOUR-PASSWORD]` por la contraseña de la base de datos (la que pusiste al crear el proyecto; se puede restablecer en **Project Settings → Database**).
-2. Guárdala como `DATABASE_URL` en Vercel (**Settings → Environment Variables**) y en tu `.env.local`.
+1. En Supabase, **Project Settings → Database**, ten a mano la contraseña de la base de datos (si no la recuerdas, **Reset database password**).
+2. En Vercel (**Settings → Environment Variables**) agrega `SUPABASE_DB_PASSWORD` con esa contraseña y `SUPABASE_DB_REGION` con la región del proyecto (aparece en la tarjeta del proyecto en Supabase, p. ej. `us-east-2`). La app arma la conexión al Session pooler por ti. Alternativa: `DATABASE_URL` con la URI completa de **Connect → Session pooler**.
 
 Desde entonces, cada `npm run build` (y por tanto cada despliegue en Vercel) ejecuta `scripts/migrate.mjs`, que:
 

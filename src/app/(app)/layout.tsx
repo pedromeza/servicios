@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
       <MobileNav version={version} />
       <main className="min-w-0 md:pl-64">
         <div className="mx-auto w-full min-w-0 max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <SchemaNotice pending={pending} hasDatabaseUrl={Boolean(process.env.DATABASE_URL)} />
+          <SchemaNotice pending={pending} hasDatabaseUrl={Boolean(process.env.DATABASE_URL || process.env.SUPABASE_DB_PASSWORD)} />
           {children}
         </div>
       </main>
