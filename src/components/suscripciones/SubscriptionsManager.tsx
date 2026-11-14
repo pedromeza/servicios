@@ -216,7 +216,8 @@ export function SubscriptionsManager({
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
-            await deleteSubscription(deleting.id);
+            const res = await deleteSubscription(deleting.id);
+            if (res && !res.ok && res.error) window.alert(res.error);
             setDeleting(null);
           });
         }}

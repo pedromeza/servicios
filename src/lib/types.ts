@@ -200,6 +200,7 @@ export type AuditEntry = {
   entity: string;
   entity_id: string | null;
   detail: string | null;
+  actor_email: string | null;
   created_at: string;
 };
 

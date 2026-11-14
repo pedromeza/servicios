@@ -177,7 +177,8 @@ export function AccountsManager({
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
-            await deleteAccount(deleting.id);
+            const res = await deleteAccount(deleting.id);
+            if (res && !res.ok && res.error) window.alert(res.error);
             setDeleting(null);
           });
         }}

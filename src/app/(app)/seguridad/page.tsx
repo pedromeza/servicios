@@ -2,7 +2,8 @@ import { Eye, KeyRound, Lock, ShieldCheck, Ticket } from "lucide-react";
 import type { Metadata } from "next";
 import { Card, CardHeader, PageHeader } from "@/components/ui/Card";
 import { requireUser } from "@/lib/auth";
-import { listAudit } from "@/lib/data";
+import { listAudit, listHelpers } from "@/lib/data";
+import { TeamPanel } from "./TeamPanel";
 import { fmtDateTime } from "@/lib/format";
 import { PasswordForm } from "./PasswordForm";
 
@@ -16,6 +17,7 @@ const ENTITY_LABEL: Record<string, string> = {
   account: "Cuenta",
   subscription: "Suscripción",
   license: "Licencia",
+  member: "Ayudante",
 };
 
 const ACTION_LABEL: Record<string, string> = {
@@ -32,7 +34,7 @@ const ACTION_LABEL: Record<string, string> = {
 };
 
 export default async function SeguridadPage() {
-  const [{ user }, audit] = await Promise.all([requireUser(), listAudit(60)]);
+  const [{ user, isOwner, ownerEmail }, audit, helpers] = await Promise.all([requireUser(), listAudit(80), listHelpers()]);
   const allowed = (process.env.ALLOWED_EMAILS ?? "").split(",").map((s) => s.trim()).filter(Boolean);
 
   return (
@@ -48,6 +50,10 @@ export default async function SeguridadPage() {
                 <p className="mt-1 break-all text-slate-800">{user.email}</p>
               </div>
               <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Rol</p>
+                <p className="mt-1 text-slate-800">{isOwner ? "Dueño de la cuenta" : `Ayudante${ownerEmail ? ` de ${ownerEmail}` : ""} · sin acceso a contraseñas ni borrado`}</p>
+              </div>
+              <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lista de acceso</p>
                 <p className="mt-1 text-slate-800">
                   {allowed.length ? `Solo ${allowed.length} correo${allowed.length > 1 ? "s" : ""} permitido${allowed.length > 1 ? "s" : ""}` : "No configurada (ALLOWED_EMAILS)"}
@@ -55,6 +61,12 @@ export default async function SeguridadPage() {
               </div>
             </div>
           </Card>
+          {isOwner && (
+            <Card>
+              <CardHeader title="Equipo" description="Ayudantes con acceso limitado" />
+              <TeamPanel helpers={helpers} />
+            </Card>
+          )}
           <Card>
             <CardHeader title="Cambiar contraseña" />
             <div className="px-5 py-4">
@@ -102,7 +114,10 @@ export default async function SeguridadPage() {
                         <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">{a.entity_id?.slice(0, 8)}</code>
                       )}
                     </span>
-                    <span className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(a.created_at)}</span>
+                    <span className="shrink-0 text-right text-xs text-slate-500">
+                      {fmtDateTime(a.created_at)}
+                      {a.actor_email && <div className="text-slate-400">{a.actor_email}</div>}
+                    </span>
                   </li>
                 ))}
               </ul>

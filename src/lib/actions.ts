@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import path from "node:path";
 import { z } from "zod";
-import { createClient } from "./supabase/server";
+import { createAdminClient, createClient } from "./supabase/server";
 import { requireUser } from "./auth";
 import { decrypt, encrypt, keyHint } from "./crypto";
 import { addMonthsISO, addYearsISO, todayISO } from "./format";
@@ -48,19 +48,24 @@ type AuditAction = "create" | "update" | "trash" | "restore" | "purge" | "renew"
 /** Historial de cambios: nunca falla la acción principal si la bitácora no se pudo escribir. */
 async function audit(supabase: Db, action: AuditAction, entity: string, entityId: string | null, detail: string) {
   try {
-    const { error } = await supabase.from("audit_log").insert({ action, entity, entity_id: entityId, detail: detail.slice(0, 200) });
-    if (error && /detail|schema cache/i.test(error.message)) {
-      await supabase.from("audit_log").insert({ action, entity, entity_id: entityId }); // migración 0012 pendiente
+    const { user } = await requireUser();
+    const { error } = await supabase.from("audit_log").insert({ action, entity, entity_id: entityId, detail: detail.slice(0, 200), actor_email: user.email ?? null });
+    if (error && /actor_email|detail|schema cache/i.test(error.message)) {
+      const retry = await supabase.from("audit_log").insert({ action, entity, entity_id: entityId, detail: detail.slice(0, 200) });
+      if (retry.error) await supabase.from("audit_log").insert({ action, entity, entity_id: entityId }); // migraciones 0012/0013 pendientes
     }
   } catch {}
 }
+
+const HELPER_DENIED = "Esta acción solo la puede hacer el dueño de la cuenta.";
 
 type TrashTable = "clients" | "accounts" | "licenses" | "subscriptions";
 const TRASH_LABEL: Record<TrashTable, string> = { clients: "client", accounts: "account", licenses: "license", subscriptions: "subscription" };
 
 /** Papelera: marca deleted_at. Si la columna no existe aún (migración pendiente), borra como antes. */
 async function trashRow(table: TrashTable, id: string, labelColumn: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
+  const { supabase, isOwner } = await requireUser();
+  if (!isOwner) return { ok: false, error: HELPER_DENIED };
   const row = await supabase.from(table).select(labelColumn).eq("id", id).maybeSingle();
   const detail = (row.data as Record<string, unknown> | null)?.[labelColumn];
   const { error } = await supabase.from(table).update({ deleted_at: new Date().toISOString() }).eq("id", id);
@@ -90,7 +95,8 @@ async function restoreRow(table: TrashTable, id: string, labelColumn: string): P
 
 /** Borrado definitivo, solo de filas que ya están en la papelera. */
 async function purgeRow(table: TrashTable, id: string, labelColumn: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
+  const { supabase, isOwner } = await requireUser();
+  if (!isOwner) return { ok: false, error: HELPER_DENIED };
   const row = await supabase.from(table).select(labelColumn).eq("id", id).maybeSingle();
   const detail = (row.data as Record<string, unknown> | null)?.[labelColumn];
   const { error } = await supabase.from(table).delete().eq("id", id).not("deleted_at", "is", null);
@@ -640,9 +646,9 @@ async function defaultLogoUrl(): Promise<string> {
 export async function saveReminderSettings(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const parsed = settingsFromForm(fd);
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
-  const { supabase, user } = await requireUser();
+  const { supabase, ownerId } = await requireUser();
   const row = { ...parsed.data, auto_days: parseAutoDays(parsed.data.auto_days).join(",") };
-  const { error } = await supabase.from("settings").upsert({ user_id: user.id, ...row, updated_at: new Date().toISOString() });
+  const { error } = await supabase.from("settings").upsert({ user_id: ownerId, ...row, updated_at: new Date().toISOString() });
   if (error) return { ok: false, error: error.message };
   refresh();
   return { ok: true };
@@ -922,6 +928,69 @@ export async function togglePriceItem(id: string, active: boolean): Promise<Acti
   return { ok: true };
 }
 
+// ---------------------------------------------------------------- Equipo (ayudantes)
+const helperSchema = z.object({
+  email: z.email("Correo inválido").max(200),
+  password: z.string().min(8, "Mínimo 8 caracteres").max(100),
+});
+
+/** Da de alta un ayudante: crea (o reutiliza) su usuario en Supabase Auth y lo vincula al dueño. */
+export async function addHelper(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const parsed = helperSchema.safeParse({ email: str(fd, "email").toLowerCase(), password: fd.get("password")?.toString() ?? "" });
+  if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
+  const { supabase, user, isOwner } = await requireUser();
+  if (!isOwner) return { ok: false, error: HELPER_DENIED };
+  if (parsed.data.email === (user.email ?? "").toLowerCase()) return { ok: false, errors: { email: "Ese es tu propio correo." } };
+
+  let admin;
+  try {
+    admin = createAdminClient();
+  } catch {
+    return { ok: false, error: "Falta SUPABASE_SERVICE_ROLE_KEY en Vercel para crear usuarios." };
+  }
+  let memberId: string | null = null;
+  const created = await admin.auth.admin.createUser({ email: parsed.data.email, password: parsed.data.password, email_confirm: true });
+  if (created.error) {
+    if (/already|exists|registered/i.test(created.error.message)) {
+      // Ya existía: lo buscamos y le ponemos la contraseña indicada.
+      const list = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+      const found = list.data?.users.find((u) => (u.email ?? "").toLowerCase() === parsed.data.email);
+      if (!found) return { ok: false, error: "El correo ya está registrado pero no pude localizarlo." };
+      memberId = found.id;
+      await admin.auth.admin.updateUserById(found.id, { password: parsed.data.password });
+    } else {
+      return { ok: false, error: created.error.message };
+    }
+  } else {
+    memberId = created.data.user.id;
+  }
+  const ins = await supabase.from("members").insert({ owner_id: user.id, member_id: memberId, email: parsed.data.email });
+  if (ins.error) {
+    if (/members|schema cache/i.test(ins.error.message)) return { ok: false, error: "Falta aplicar la migración 0013 (tabla members). Revisa el aviso amarillo del panel." };
+    if (/duplicate|unique/i.test(ins.error.message)) return { ok: false, errors: { email: "Ese usuario ya es ayudante." } };
+    return { ok: false, error: ins.error.message };
+  }
+  await audit(supabase, "create", "member", memberId, parsed.data.email);
+  refresh();
+  return { ok: true };
+}
+
+/** Quita a un ayudante y elimina su usuario para que no pueda entrar. */
+export async function removeHelper(id: string): Promise<ActionState> {
+  const { supabase, isOwner } = await requireUser();
+  if (!isOwner) return { ok: false, error: HELPER_DENIED };
+  const row = await supabase.from("members").select("member_id,email").eq("id", id).maybeSingle();
+  if (!row.data) return { ok: false, error: "El ayudante no existe." };
+  const del = await supabase.from("members").delete().eq("id", id);
+  if (del.error) return { ok: false, error: del.error.message };
+  try {
+    await createAdminClient().auth.admin.deleteUser(row.data.member_id as string);
+  } catch {}
+  await audit(supabase, "purge", "member", row.data.member_id as string, row.data.email as string);
+  refresh();
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------- Migraciones
 export type MigrateState = { ok: boolean; lines: string[] } | null;
 
@@ -952,7 +1021,8 @@ export async function revealSecret(
   id: string,
 ): Promise<{ ok: true; value: string } | { ok: false; error: string }> {
   if (!z.uuid().safeParse(id).success) return { ok: false, error: "Identificador inválido." };
-  const { supabase } = await requireUser();
+  const { supabase, isOwner } = await requireUser();
+  if (!isOwner) return { ok: false, error: "Los ayudantes no pueden ver contraseñas ni claves." };
 
   const table = entity === "account_password" ? "accounts" : "licenses";
   const column = entity === "account_password" ? "password_enc" : entity === "license_password" ? "account_password_enc" : "key_enc";

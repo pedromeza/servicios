@@ -60,6 +60,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0010_automation.sql", () => supabase.from("settings").select("auto_remind").limit(1)],
     ["0011_price_list.sql", () => supabase.from("price_list").select("id").limit(1)],
     ["0012_trash_history.sql", () => supabase.from("clients").select("deleted_at").limit(1)],
+    ["0013_members.sql", () => supabase.from("members").select("id").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -502,19 +503,32 @@ export async function listPrices(): Promise<PriceItem[]> {
   }));
 }
 
+// ---------------------------------------------------------------- Equipo
+export type Helper = { id: string; email: string; created_at: string };
+
+export async function listHelpers(): Promise<Helper[]> {
+  const { supabase, user } = await requireUser();
+  const { data, error } = await supabase.from("members").select("id,email,created_at").eq("owner_id", user.id).order("created_at");
+  if (error) {
+    if (isMissingSchema(error)) return [];
+    fail(error);
+  }
+  return (data ?? []) as Helper[];
+}
+
 // ---------------------------------------------------------------- Bitácora
 export async function listAudit(limit = 50): Promise<AuditEntry[]> {
   const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("audit_log")
-    .select("id,action,entity,entity_id,detail,created_at")
+    .select("id,action,entity,entity_id,detail,actor_email,created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) {
     if (!isMissingSchema(error)) fail(error);
     const old = await supabase.from("audit_log").select("id,action,entity,entity_id,created_at").order("created_at", { ascending: false }).limit(limit);
     fail(old.error);
-    return ((old.data ?? []) as any[]).map((r) => ({ ...r, detail: null })) as AuditEntry[];
+    return ((old.data ?? []) as any[]).map((r) => ({ ...r, detail: null, actor_email: null })) as AuditEntry[];
   }
   return data as AuditEntry[];
 }

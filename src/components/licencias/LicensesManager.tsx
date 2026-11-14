@@ -216,7 +216,8 @@ export function LicensesManager({
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
-            await deleteLicense(deleting.id);
+            const res = await deleteLicense(deleting.id);
+            if (res && !res.ok && res.error) window.alert(res.error);
             setDeleting(null);
           });
         }}

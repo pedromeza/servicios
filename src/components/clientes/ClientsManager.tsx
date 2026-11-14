@@ -165,7 +165,8 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
-            await deleteClient(deleting.id);
+            const res = await deleteClient(deleting.id);
+            if (res && !res.ok && res.error) window.alert(res.error);
             setDeleting(null);
           });
         }}

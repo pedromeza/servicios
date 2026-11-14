@@ -6,8 +6,8 @@ import { SchemaNotice } from "@/components/ui/SchemaNotice";
 import { pendingMigrations } from "@/lib/data";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const { user } = await requireUser();
-  const email = user.email ?? "";
+  const { user, role } = await requireUser();
+  const email = `${user.email ?? ""}${role === "helper" ? " · ayudante" : ""}`;
   const pending = await pendingMigrations().catch(() => []);
   // Vercel define VERCEL_GIT_COMMIT_SHA al compilar; sirve para saber qué versión está desplegada.
   const version = (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7);
