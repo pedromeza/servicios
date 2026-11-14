@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Eye, EyeOff, MessageCircle, Pencil, Plus, Tag, Trash2 } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, ListOrdered, MessageCircle, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { useCallback, useMemo, useState, useTransition } from "react";
 import { deletePriceItem, togglePriceItem } from "@/lib/actions";
 import { fmtMoney } from "@/lib/format";
@@ -71,6 +71,33 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
     } catch {}
   };
   const waNumber = whatsappNumber(phone);
+
+  // ---- Lista completa para enviar
+  const [listPhone, setListPhone] = useState("");
+  const [listIntro, setListIntro] = useState("Hola, te comparto nuestra lista de precios:");
+  const [listCopied, setListCopied] = useState(false);
+  const listText = useMemo(() => {
+    const byProduct = new Map<string, PriceItem[]>();
+    for (const p of active) byProduct.set(p.product, [...(byProduct.get(p.product) ?? []), p]);
+    const lines: string[] = ["*Lista de precios PGPM MEX*", ""];
+    if (listIntro.trim()) lines.splice(0, 0, listIntro.trim(), "");
+    for (const [product, items] of byProduct) {
+      lines.push(`*${product}*`);
+      for (const p of items.sort((a, b) => a.term_years - b.term_years)) {
+        lines.push(`  • ${PRICE_TERMS[p.term_years]}: ${fmtMoney(p.price, p.currency)}${p.notes ? ` (${p.notes})` : ""}`);
+      }
+    }
+    lines.push("", paymentUrl ? `Pago seguro por Mercado Libre: ${paymentUrl}` : "Pago por Mercado Libre.", "Activación el mismo día. Atención por WhatsApp" + (whatsapp ? ` ${whatsapp}` : "") + ".");
+    return lines.join("\n");
+  }, [active, listIntro, paymentUrl, whatsapp]);
+  const copyList = async () => {
+    try {
+      await navigator.clipboard.writeText(listText);
+      setListCopied(true);
+      setTimeout(() => setListCopied(false), 1500);
+    } catch {}
+  };
+  const listWa = whatsappNumber(listPhone);
 
   return (
     <>
@@ -215,6 +242,48 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
           </div>
         </Card>
       </div>
+
+      <Card className="mt-6">
+        <CardHeader title="Lista de precios para enviar" description="Todos los precios activos, agrupados por programa, listos para WhatsApp o para pegar en Mercado Libre." />
+        <div className="grid gap-4 px-5 py-4 lg:grid-cols-2">
+          <div className="space-y-4">
+            <Field label="Texto de inicio (opcional)">
+              <Input value={listIntro} onChange={(ev) => setListIntro(ev.target.value)} placeholder="Hola, te comparto nuestra lista de precios:" />
+            </Field>
+            <Field label="WhatsApp del cliente (opcional)" hint={listPhone && !listWa ? "Escribe 10 dígitos." : "Déjalo vacío si solo vas a copiar el texto."}>
+              <Input value={listPhone} onChange={(ev) => setListPhone(ev.target.value)} placeholder="55 1234 5678" inputMode="tel" />
+            </Field>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" onClick={copyList} disabled={active.length === 0}>
+                {listCopied ? <Check size={15} /> : <Copy size={15} />} {listCopied ? "Copiado" : "Copiar lista"}
+              </Button>
+              {listWa ? (
+                <a
+                  href={whatsappLink(listWa, listText)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#25D366] px-4 text-sm font-medium text-white hover:bg-[#1ebe5d]"
+                >
+                  <MessageCircle size={16} /> Enviar por WhatsApp
+                </a>
+              ) : (
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(listText)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#25D366] px-4 text-sm font-medium text-white hover:bg-[#1ebe5d]"
+                  title="Abre WhatsApp para que elijas a quién mandarla"
+                >
+                  <ListOrdered size={16} /> Elegir contacto en WhatsApp
+                </a>
+              )}
+            </div>
+          </div>
+          <Field label="Vista previa">
+            <Textarea readOnly value={listText} className="min-h-[240px] font-mono text-[13px]" />
+          </Field>
+        </div>
+      </Card>
 
       <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nuevo precio" : "Editar precio"}>
         <PriceForm key={nonce} item={editing === "new" ? null : editing} onDone={close} onCancel={close} />
