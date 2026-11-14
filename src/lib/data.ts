@@ -61,6 +61,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0011_price_list.sql", () => supabase.from("price_list").select("id").limit(1)],
     ["0012_trash_history.sql", () => supabase.from("clients").select("deleted_at").limit(1)],
     ["0013_members.sql", () => supabase.from("members").select("id").limit(1)],
+    ["0014_renewal_scope.sql", () => supabase.from("renewal_events").select("plan").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -298,6 +299,8 @@ export async function listRenewalEvents(): Promise<RenewalEvent[]> {
     currency: r.currency,
     from_date: r.from_date,
     to_date: r.to_date,
+    plan: r.plan ?? null,
+    products: r.products ?? [],
   }));
 }
 

@@ -357,6 +357,8 @@ const renewSchema = z.object({
   renewed_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
   years: z.coerce.number().int().min(1).max(3),
   only_payment: z.boolean(), // solo anotar el cobro de una renovación ya hecha, sin mover fechas
+  plan: z.enum(["individual", "suite"]),
+  products: z.array(z.string().min(1).max(80)).min(1, "Marca al menos un programa"),
 });
 
 export async function renewSubscription(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -367,6 +369,13 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
     renewed_at: str(fd, "renewed_at") || todayISO(),
     years: str(fd, "years") || "1",
     only_payment: fd.get("only_payment") === "on",
+    plan: str(fd, "plan") || "individual",
+    products: Array.from(
+      new Set([
+        ...fd.getAll("products").map((p) => p.toString().trim()).filter(Boolean),
+        ...str(fd, "products_extra").split(",").map((s) => s.trim()).filter(Boolean),
+      ]),
+    ),
   });
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
   const d = parsed.data;
@@ -381,16 +390,17 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
   if (!d.only_payment) {
     const base = previous && previous >= d.renewed_at ? previous : d.renewed_at;
     to_date = addYearsISO(base, d.years);
+    // La suscripción queda con el alcance renovado (p. ej. tenía la suite y renueva solo AutoCAD y Revit).
     const upd = await supabase
       .from("subscriptions")
-      .update({ renews_at: to_date, renewals: Number(data.renewals ?? 0) + 1, status: "active" })
+      .update({ renews_at: to_date, renewals: Number(data.renewals ?? 0) + 1, status: "active", plan: d.plan, products: d.products })
       .eq("id", d.id);
     if (upd.error) return { ok: false, error: upd.error.message };
   } else {
     // La fecha ya está corrida: el cobro cubre hasta la renovación vigente.
     from_date = previous ? addYearsISO(previous, -d.years) : null;
   }
-  const ev = await supabase.from("renewal_events").insert({
+  const eventRow = {
     subscription_id: d.id,
     renewed_at: d.renewed_at,
     amount: d.amount,
@@ -398,14 +408,16 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
     currency: data.currency ?? "MXN",
     from_date,
     to_date,
-  });
+  };
+  let ev = await supabase.from("renewal_events").insert({ ...eventRow, plan: d.plan, products: d.products });
+  if (ev.error && /plan|products|schema cache/i.test(ev.error.message)) ev = await supabase.from("renewal_events").insert(eventRow); // migración 0014 pendiente
   if (ev.error) {
     if (/renewal_events|schema cache/i.test(ev.error.message)) {
       return { ok: false, error: "Falta aplicar la migración 0009 (tabla renewal_events): el cobro no se pudo guardar. Revisa el aviso amarillo del panel." };
     }
     return { ok: false, error: ev.error.message };
   }
-  await audit(supabase, "renew", "subscription", d.id, `${d.only_payment ? "Cobro registrado" : "Renovada"} · ${fmtMoney(d.amount, data.currency ?? "MXN")}`);
+  await audit(supabase, "renew", "subscription", d.id, `${d.only_payment ? "Cobro registrado" : "Renovada"} · ${d.plan === "suite" ? "suite completa" : d.products.join(", ")} · ${fmtMoney(d.amount, data.currency ?? "MXN")}`);
   refresh();
   return { ok: true };
 }

@@ -213,6 +213,8 @@ export type RenewalEvent = {
   currency: string;
   from_date: string | null;
   to_date: string | null;
+  plan: SubPlan | null;
+  products: string[]; // qué programas cubrió esa renovación (vacío si no se registró)
 };
 
 /** Dinero: lo cobrado en ventas, lo cobrado en renovaciones y lo que se espera cobrar al renovar lo activo. */

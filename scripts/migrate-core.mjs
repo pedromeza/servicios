@@ -28,6 +28,7 @@ const BASELINE_CHECKS = {
   "0011_price_list.sql": `select to_regclass('public.price_list') is not null`,
   "0012_trash_history.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='clients' and column_name='deleted_at')`,
   "0013_members.sql": `select to_regclass('public.members') is not null`,
+  "0014_renewal_scope.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='renewal_events' and column_name='products')`,
 };
 
 /**

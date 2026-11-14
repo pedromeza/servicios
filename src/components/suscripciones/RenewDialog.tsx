@@ -1,9 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import { renewSubscription, type ActionState } from "@/lib/actions";
 import { addYearsISO, fmtDate, fmtMoney, todayISO } from "@/lib/format";
-import { ACCOUNT_TERMS, type Subscription } from "@/lib/types";
+import { ACCOUNT_TERMS, PRODUCTS_BY_PROVIDER, SUB_PLANS, type Provider, type Subscription } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, FormError, Input, Select } from "@/components/ui/Fields";
@@ -15,6 +15,20 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
   const [years, setYears] = useState("1");
   const [renewedAt, setRenewedAt] = useState(todayISO());
   const [onlyPayment, setOnlyPayment] = useState(false);
+  const [plan, setPlan] = useState<string>(s?.plan ?? "individual");
+  const catalog = useMemo(() => {
+    const base = PRODUCTS_BY_PROVIDER[(s?.account_provider ?? "Otro") as Provider] ?? [];
+    return Array.from(new Set([...base, ...(s?.products ?? [])]));
+  }, [s]);
+  const [checked, setChecked] = useState<Set<string>>(() => new Set(s?.products ?? []));
+  const toggle = (p: string) =>
+    setChecked((c) => {
+      const n = new Set(c);
+      if (n.has(p)) n.delete(p);
+      else n.add(p);
+      return n;
+    });
+  const extraProducts = (s?.products ?? []).filter((p) => !catalog.includes(p));
   useEffect(() => {
     if (state?.ok) onClose();
   }, [state, onClose]);
@@ -24,7 +38,7 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
   const next = addYearsISO(base, Number(years) || 1);
 
   return (
-    <Dialog open onClose={onClose} title="Renovar suscripción" description={`${s.products.join(", ")} · ${s.client_name ?? "sin cliente"} · ${s.account_label}`}>
+    <Dialog open onClose={onClose} title="Renovar suscripción" description={`${s.products.join(", ")} · ${s.client_name ?? "sin cliente"} · ${s.account_label}`} wide>
       <form action={action} className="space-y-4">
         <input type="hidden" name="id" value={s.id} />
         <FormError message={state?.error} />
@@ -48,6 +62,34 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
             </Select>
           </Field>
         </div>
+        <Field label="Qué se renueva" error={e.products} hint={plan === "suite" ? "La suscripción queda como suite completa." : "La suscripción queda solo con los programas marcados."}>
+          <div className="grid grid-cols-2 gap-2">
+            {Object.entries(SUB_PLANS).map(([k, v]) => (
+              <label
+                key={k}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                  plan === k ? "border-brand bg-brand-light text-navy-900" : "border-slate-200 hover:bg-navy-50"
+                }`}
+              >
+                <input type="radio" name="plan" value={k} checked={plan === k} onChange={() => setPlan(k)} className="accent-brand" />
+                {v}
+              </label>
+            ))}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-1.5 rounded-lg border border-slate-200 p-3 sm:grid-cols-3">
+            {catalog.map((p) => (
+              <label key={p} className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="products" value={p} checked={checked.has(p)} onChange={() => toggle(p)} className="accent-brand" />
+                {p}
+              </label>
+            ))}
+          </div>
+          <Input name="products_extra" defaultValue={extraProducts.join(", ")} placeholder="Otros programas, separados por coma" className="mt-2" />
+          {s.plan === "suite" && plan === "individual" && (
+            <p className="mt-2 text-xs text-amber-700">Tenía la suite completa; al renovar solo lo marcado, el cliente pierde acceso al resto cuando venza el periodo actual.</p>
+          )}
+        </Field>
+
         <label className="flex items-start gap-2 rounded-lg border border-navy-100 px-3 py-2 text-sm text-slate-700">
           <input type="checkbox" name="only_payment" checked={onlyPayment} onChange={(ev) => setOnlyPayment(ev.target.checked)} className="mt-0.5 accent-brand" />
           <span>

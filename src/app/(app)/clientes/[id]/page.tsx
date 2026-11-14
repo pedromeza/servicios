@@ -290,7 +290,10 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                   return (
                     <li key={ev.id} className="flex items-start justify-between gap-3 px-5 py-3">
                       <div className="min-w-0">
-                        <div className="text-slate-800">{sub?.products.join(", ") ?? "Suscripción"}</div>
+                        <div className="text-slate-800">
+                          {ev.products.length > 0 ? ev.products.join(", ") : (sub?.products.join(", ") ?? "Suscripción")}
+                          {ev.plan === "suite" && <span className="ml-1 text-xs text-slate-500">· suite completa</span>}
+                        </div>
                         <div className="text-xs text-slate-500">
                           {fmtDate(ev.renewed_at)}
                           {ev.to_date ? ` · cubre hasta ${fmtDate(ev.to_date)}` : ""}
