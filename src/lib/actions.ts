@@ -821,6 +821,58 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
   return result;
 }
 
+// ---------------------------------------------------------------- Lista de precios
+const priceSchema = z.object({
+  id: z.uuid().nullable(),
+  product: z.string().min(1, "Indica el producto").max(120),
+  term_years: z.coerce.number().int().min(0).max(3),
+  price: z.coerce.number().min(0, "No puede ser negativo"),
+  cost: z.coerce.number().min(0, "No puede ser negativo"),
+  currency: z.enum(["MXN", "USD"]),
+  notes: z.string().max(300),
+  active: z.boolean(),
+});
+
+export async function savePriceItem(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const parsed = priceSchema.safeParse({
+    id: orNull(str(fd, "id")),
+    product: str(fd, "product"),
+    term_years: str(fd, "term_years") || "1",
+    price: str(fd, "price") || "0",
+    cost: str(fd, "cost") || "0",
+    currency: str(fd, "currency") || "MXN",
+    notes: str(fd, "notes"),
+    active: fd.get("active") !== "off",
+  });
+  if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
+  const d = parsed.data;
+  const { supabase } = await requireUser();
+  const payload = { product: d.product, term_years: d.term_years, price: d.price, cost: d.cost, currency: d.currency, notes: orNull(d.notes), active: d.active };
+  const { error } = d.id ? await supabase.from("price_list").update(payload).eq("id", d.id) : await supabase.from("price_list").insert(payload);
+  if (error) {
+    if (/price_list|schema cache/i.test(error.message)) return { ok: false, error: "Falta aplicar la migración 0011 (tabla price_list). Revisa el aviso amarillo del panel." };
+    return { ok: false, error: error.message };
+  }
+  refresh();
+  return { ok: true };
+}
+
+export async function deletePriceItem(id: string): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("price_list").delete().eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
+export async function togglePriceItem(id: string, active: boolean): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("price_list").update({ active }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  refresh();
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------- Migraciones
 export type MigrateState = { ok: boolean; lines: string[] } | null;
 

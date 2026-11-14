@@ -11,6 +11,7 @@ import type {
   AuditEntry,
   Client,
   DashboardData,
+  PriceItem,
   ReminderCandidate,
   RenewalEvent,
   RenewalMoney,
@@ -57,6 +58,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0008_subscription_trash.sql", () => supabase.from("subscriptions").select("deleted_at").limit(1)],
     ["0009_renewal_events.sql", () => supabase.from("renewal_events").select("id").limit(1)],
     ["0010_automation.sql", () => supabase.from("settings").select("auto_remind").limit(1)],
+    ["0011_price_list.sql", () => supabase.from("price_list").select("id").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -468,6 +470,27 @@ export async function renewalCandidates(days: number): Promise<ReminderCandidate
     })
     .filter((c) => c.days <= days)
     .sort((a, b) => a.days - b.days);
+}
+
+// ---------------------------------------------------------------- Lista de precios
+export async function listPrices(): Promise<PriceItem[]> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.from("price_list").select("*").order("sort").order("product").order("term_years");
+  if (error) {
+    if (isMissingSchema(error)) return []; // migración 0011 pendiente
+    fail(error);
+  }
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    product: r.product,
+    term_years: Number(r.term_years ?? 1),
+    price: Number(r.price),
+    cost: Number(r.cost ?? 0),
+    currency: r.currency ?? "MXN",
+    notes: r.notes ?? null,
+    active: Boolean(r.active ?? true),
+    sort: Number(r.sort ?? 0),
+  }));
 }
 
 // ---------------------------------------------------------------- Bitácora

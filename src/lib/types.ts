@@ -177,6 +177,20 @@ export type ReminderCandidate = {
   reminders_sent: number;
 };
 
+export type PriceItem = {
+  id: string;
+  product: string;
+  term_years: number; // 0 = permanente
+  price: number;
+  cost: number;
+  currency: string;
+  notes: string | null;
+  active: boolean;
+  sort: number;
+};
+
+export const PRICE_TERMS: Record<number, string> = { 0: "Permanente", 1: "1 año", 2: "2 años", 3: "3 años" };
+
 export type AuditEntry = {
   id: number;
   action: string;
