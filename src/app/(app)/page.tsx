@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, CalendarClock, KeyRound, RefreshCw, Ticket, TrendingUp } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CalendarClock, KeyRound, RefreshCw, Ticket, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
@@ -49,8 +49,26 @@ export default async function DashboardPage() {
           icon={<TrendingUp size={20} />}
           label="Ganancia acumulada"
           value={fmtMoney(d.profit)}
-          sub={`Ventas ${fmtMoney(d.revenue)} · Costo ${fmtMoney(d.cost)}`}
+          sub={`Cobrado ${fmtMoney(d.revenue)} · Costo ${fmtMoney(d.cost)}`}
         />
+      </div>
+
+      <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat icon={<Wallet size={20} />} label="Cobrado en ventas" value={fmtMoney(d.money.sales)} sub="Precio original de cada suscripción" />
+        <Stat
+          icon={<RefreshCw size={20} />}
+          label="Cobrado en renovaciones"
+          value={fmtMoney(d.money.renewals_collected)}
+          sub={`${d.money.renewals_count} renovaci${d.money.renewals_count === 1 ? "ón registrada" : "ones registradas"}`}
+        />
+        <Stat
+          icon={<CalendarClock size={20} />}
+          label="Por renovar en 30 días"
+          value={fmtMoney(d.money.upcoming_30)}
+          sub={`En 90 días: ${fmtMoney(d.money.upcoming_90)}${d.money.overdue ? ` · vencido sin renovar ${fmtMoney(d.money.overdue)}` : ""}`}
+          accent={d.money.upcoming_30 > 0}
+        />
+        <Stat icon={<TrendingUp size={20} />} label="Si todo renueva" value={fmtMoney(d.money.upcoming_year)} sub="Activas con fecha, al precio actual" />
       </div>
 
       <div className="mt-6 grid min-w-0 gap-6 lg:grid-cols-3">

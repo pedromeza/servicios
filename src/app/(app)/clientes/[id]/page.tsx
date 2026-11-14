@@ -16,7 +16,7 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
   const { id } = await params;
   const data = await getClient(id);
   if (!data) notFound();
-  const { client: c, subscriptions, licenses, card, reminders } = data;
+  const { client: c, subscriptions, licenses, card, reminders, renewalEvents, money } = data;
 
   const active = subscriptions.filter((s) => s.status === "active");
   const next = active
@@ -48,7 +48,7 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
         </Link>
       </div>
 
-      <div className="mb-6 grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-6 grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <Stat label="Suscripciones" value={String(subscriptions.length)} sub={`${active.length} activa${active.length === 1 ? "" : "s"}`} icon={<RefreshCw size={18} />} />
         <Stat
           label="Próxima renovación"
@@ -57,7 +57,19 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
           icon={<BellRing size={18} />}
           accent={nextDays !== null && nextDays <= 30}
         />
-        <Stat label="Renovaciones hechas" value={String(renewals)} sub={`${fmtMoney(sold)} vendido en total`} icon={<Check size={18} />} />
+        <Stat
+          label="Cobrado en renovaciones"
+          value={fmtMoney(money.renewals_collected)}
+          sub={`${renewals} renovaci${renewals === 1 ? "ón" : "ones"} · ventas ${fmtMoney(sold)}`}
+          icon={<Check size={18} />}
+        />
+        <Stat
+          label="Por cobrar al renovar"
+          value={fmtMoney(money.upcoming_year)}
+          sub={money.upcoming_30 > 0 ? `${fmtMoney(money.upcoming_30)} en los próximos 30 días` : money.overdue > 0 ? `${fmtMoney(money.overdue)} vencido sin renovar` : "Nada próximo"}
+          icon={<RefreshCw size={18} />}
+          accent={money.upcoming_30 > 0}
+        />
         <Stat
           label="Lealtad"
           value={card ? `${card.progress} / ${LOYALTY.stampsPerReward}` : "—"}
@@ -193,7 +205,7 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
           )}
         </Card>
 
-        <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+        <div className="grid min-w-0 gap-6 lg:grid-cols-3">
           <Card>
             <CardHeader title="Licencias" description={`${licenses.length} asignada${licenses.length === 1 ? "" : "s"} (propias o por puesto)`} />
             {licenses.length === 0 ? (
@@ -216,6 +228,34 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                         </div>
                       </div>
                       <Badge tone={l.status === "available" ? "success" : "neutral"}>{l.status === "available" ? "Disponible" : "Utilizada"}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Cobros de renovación"
+              description={renewalEvents.length === 0 ? "Aún no se registra ninguna renovación cobrada" : `${renewalEvents.length} cobro${renewalEvents.length === 1 ? "" : "s"} · ${fmtMoney(money.renewals_collected)} en total`}
+            />
+            {renewalEvents.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-slate-500">Al pulsar Renovar en una suscripción se registra aquí cuánto cobraste y qué periodo cubre.</p>
+            ) : (
+              <ul className="divide-y divide-navy-100 text-sm">
+                {renewalEvents.map((ev) => {
+                  const sub = subscriptions.find((s) => s.id === ev.subscription_id);
+                  return (
+                    <li key={ev.id} className="flex items-start justify-between gap-3 px-5 py-3">
+                      <div className="min-w-0">
+                        <div className="text-slate-800">{sub?.products.join(", ") ?? "Suscripción"}</div>
+                        <div className="text-xs text-slate-500">
+                          {fmtDate(ev.renewed_at)}
+                          {ev.to_date ? ` · cubre hasta ${fmtDate(ev.to_date)}` : ""}
+                        </div>
+                      </div>
+                      <span className="shrink-0 font-medium text-navy-900">{fmtMoney(ev.amount, ev.currency)}</span>
                     </li>
                   );
                 })}

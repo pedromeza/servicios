@@ -184,6 +184,28 @@ export type AuditEntry = {
   created_at: string;
 };
 
+export type RenewalEvent = {
+  id: string;
+  subscription_id: string;
+  renewed_at: string;
+  amount: number;
+  cost: number;
+  currency: string;
+  from_date: string | null;
+  to_date: string | null;
+};
+
+/** Dinero: lo cobrado en ventas, lo cobrado en renovaciones y lo que se espera cobrar al renovar lo activo. */
+export type RenewalMoney = {
+  sales: number; // precio de venta de las suscripciones (cobro original)
+  renewals_collected: number; // suma de cobros de renovación registrados
+  renewals_count: number;
+  upcoming_30: number; // precio de las activas que vencen en ≤30 días
+  upcoming_90: number;
+  upcoming_year: number; // todas las activas con fecha (lo que generarían al renovar)
+  overdue: number; // activas ya vencidas sin renovar
+};
+
 export type DashboardData = {
   activeSubs: number;
   renewingSoon: number;
@@ -193,6 +215,7 @@ export type DashboardData = {
   revenue: number;
   cost: number;
   profit: number;
+  money: RenewalMoney;
   upcoming: Subscription[];
   licensesByProduct: { product: string; available: number; used: number }[];
   accountsByProvider: { provider: string; count: number }[];

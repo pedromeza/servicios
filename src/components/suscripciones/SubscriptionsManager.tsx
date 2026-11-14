@@ -3,7 +3,9 @@
 import { AlertTriangle, Pencil, Plus, RefreshCw, Trash2, Undo2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
-import { deleteSubscription, purgeSubscription, renewSubscription, restoreSubscription, setSubscriptionStatus } from "@/lib/actions";
+import { deleteSubscription, purgeSubscription, restoreSubscription, setSubscriptionStatus } from "@/lib/actions";
+import type { RenewalMoney } from "@/lib/types";
+import { RenewDialog } from "./RenewDialog";
 import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
 import { SUB_PLANS, SUB_STATUS, type Option, type Subscription } from "@/lib/types";
@@ -20,12 +22,14 @@ export function SubscriptionsManager({
   subscriptions,
   paging,
   total,
+  money,
   accounts,
   clients,
 }: {
   subscriptions: Subscription[];
   paging: Page;
   total: number;
+  money: RenewalMoney;
   accounts: Option[];
   clients: Option[];
 }) {
@@ -41,21 +45,13 @@ export function SubscriptionsManager({
     setEditing(s);
   };
   const close = useCallback(() => setEditing(null), []);
-
-  const totals = subscriptions.reduce(
-    (acc, s) => {
-      acc.price += s.price;
-      acc.cost += s.cost;
-      return acc;
-    },
-    { price: 0, cost: 0 },
-  );
+  const closeRenew = useCallback(() => setRenewing(null), []);
 
   return (
     <>
       <PageHeader
         title="Suscripciones"
-        description={`${total} registrada${total === 1 ? "" : "s"} · ventas ${fmtMoney(totals.price)} · ganancia ${fmtMoney(totals.price - totals.cost)} en la vista actual`}
+        description={`${total} registrada${total === 1 ? "" : "s"} · ventas ${fmtMoney(money.sales)} · cobrado en renovaciones ${fmtMoney(money.renewals_collected)} (${money.renewals_count}) · por renovar en 30 días ${fmtMoney(money.upcoming_30)} · en 90 días ${fmtMoney(money.upcoming_90)}`}
         action={
           <Button onClick={() => open("new")} disabled={accounts.length === 0} title={accounts.length === 0 ? "Primero crea una cuenta" : undefined}>
             <Plus size={16} /> Nueva suscripción
@@ -210,23 +206,7 @@ export function SubscriptionsManager({
       <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nueva suscripción" : "Editar suscripción"} wide>
         <SubscriptionForm key={nonce} subscription={editing === "new" ? null : editing} accounts={accounts} clients={clients} onDone={close} onCancel={close} />
       </Dialog>
-      <ConfirmDialog
-        open={renewing !== null}
-        onClose={() => setRenewing(null)}
-        pending={pending}
-        title="Renovar suscripción"
-        confirmLabel="Renovar"
-        pendingLabel="Renovando…"
-        tone="primary"
-        description={`Se correrá la fecha de renovación de ${renewing?.products.join(", ")} un periodo más a partir del ${fmtDate(renewing?.renews_at)}, quedará activa y el cliente sumará un sello en su tarjeta de lealtad.`}
-        onConfirm={() => {
-          if (!renewing) return;
-          start(async () => {
-            await renewSubscription(renewing.id);
-            setRenewing(null);
-          });
-        }}
-      />
+      {renewing && <RenewDialog key={renewing.id} subscription={renewing} onClose={closeRenew} />}
       <ConfirmDialog
         open={deleting !== null}
         onClose={() => setDeleting(null)}

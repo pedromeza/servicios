@@ -12,6 +12,8 @@ import type {
   Client,
   DashboardData,
   ReminderCandidate,
+  RenewalEvent,
+  RenewalMoney,
   License,
   LicenseSeat,
   Option,
@@ -53,6 +55,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0006_loyalty.sql", () => supabase.from("rewards").select("id").limit(1)],
     ["0007_reminders.sql", () => supabase.from("settings").select("user_id").limit(1)],
     ["0008_subscription_trash.sql", () => supabase.from("subscriptions").select("deleted_at").limit(1)],
+    ["0009_renewal_events.sql", () => supabase.from("renewal_events").select("id").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -267,17 +270,58 @@ export async function listLicenses(filters: { q?: string; status?: string; kind?
     );
 }
 
+// ---------------------------------------------------------------- Cobros de renovación
+export async function listRenewalEvents(): Promise<RenewalEvent[]> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.from("renewal_events").select("*").order("renewed_at", { ascending: false });
+  if (error) {
+    if (isMissingSchema(error)) return []; // migración 0009 pendiente
+    fail(error);
+  }
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    subscription_id: r.subscription_id,
+    renewed_at: r.renewed_at,
+    amount: Number(r.amount),
+    cost: Number(r.cost ?? 0),
+    currency: r.currency,
+    from_date: r.from_date,
+    to_date: r.to_date,
+  }));
+}
+
+/** Cifras de dinero para un conjunto de suscripciones (todas, o las de un cliente). */
+export function renewalMoney(subs: Subscription[], events: RenewalEvent[]): RenewalMoney {
+  const ids = new Set(subs.map((s) => s.id));
+  const mine = events.filter((e) => ids.has(e.subscription_id));
+  const active = subs.filter((s) => s.status === "active" && s.renews_at);
+  const within = (max: number) => active.filter((s) => {
+    const d = daysUntil(s.renews_at);
+    return d !== null && d >= 0 && d <= max;
+  });
+  return {
+    sales: subs.reduce((n, s) => n + s.price, 0),
+    renewals_collected: mine.reduce((n, e) => n + e.amount, 0),
+    renewals_count: mine.length,
+    upcoming_30: within(30).reduce((n, s) => n + s.price, 0),
+    upcoming_90: within(90).reduce((n, s) => n + s.price, 0),
+    upcoming_year: active.filter((s) => (daysUntil(s.renews_at) ?? -1) >= 0).reduce((n, s) => n + s.price, 0),
+    overdue: active.filter((s) => (daysUntil(s.renews_at) ?? 0) < 0).reduce((n, s) => n + s.price, 0),
+  };
+}
+
 // ---------------------------------------------------------------- Detalle de cliente
 export type ClientReminder = { id: string; subscription_id: string; products: string; to: string | null; sent_at: string };
 
 export async function getClient(id: string) {
   const { supabase } = await requireUser();
-  const [clients, subsAll, lics, cards, sent] = await Promise.all([
+  const [clients, subsAll, lics, cards, sent, events] = await Promise.all([
     listClients(),
     listSubscriptions(),
     listLicenses(),
     loyaltyCards(),
     supabase.from("reminders").select("id,subscription_id,to_email_enc,sent_at").eq("kind", "client").order("sent_at", { ascending: false }),
+    listRenewalEvents(),
   ]);
   const client = clients.find((c) => c.id === id);
   if (!client) return null;
@@ -294,7 +338,8 @@ export async function getClient(id: string) {
       to: decrypt(r.to_email_enc),
       sent_at: r.sent_at,
     }));
-  return { client, subscriptions, licenses, card, reminders };
+  const renewalEvents = events.filter((e) => subIds.has(e.subscription_id));
+  return { client, subscriptions, licenses, card, reminders, renewalEvents, money: renewalMoney(subscriptions, events) };
 }
 
 // ---------------------------------------------------------------- Lealtad
@@ -433,7 +478,7 @@ export async function listAudit(limit = 50): Promise<AuditEntry[]> {
 
 // ---------------------------------------------------------------- Panel
 export async function dashboardData(): Promise<DashboardData> {
-  const [subs, licenses, accounts] = await Promise.all([listSubscriptions(), listLicenses(), listAccounts()]);
+  const [subs, licenses, accounts, events] = await Promise.all([listSubscriptions(), listLicenses(), listAccounts(), listRenewalEvents()]);
   const active = subs.filter((s) => s.status === "active");
   const withDays = active.map((s) => ({ s, d: daysUntil(s.renews_at) }));
   const renewingSoon = withDays.filter((x) => x.d !== null && x.d >= 0 && x.d <= 30).length;
@@ -444,8 +489,9 @@ export async function dashboardData(): Promise<DashboardData> {
     .slice(0, 8)
     .map((x) => x.s);
 
-  const revenue = subs.reduce((n, s) => n + s.price, 0);
-  const cost = subs.reduce((n, s) => n + s.cost, 0);
+  const money = renewalMoney(subs, events);
+  const revenue = money.sales + money.renewals_collected;
+  const cost = subs.reduce((n, s) => n + s.cost, 0) + events.reduce((n, e) => n + e.cost, 0);
 
   const byProduct = new Map<string, { available: number; used: number }>();
   for (const l of licenses) {
@@ -465,6 +511,7 @@ export async function dashboardData(): Promise<DashboardData> {
     revenue,
     cost,
     profit: revenue - cost,
+    money,
     upcoming,
     licensesByProduct: [...byProduct.entries()]
       .map(([product, v]) => ({ product, ...v }))

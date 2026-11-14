@@ -271,22 +271,48 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
  * Renueva una suscripción: corre la fecha de renovación un periodo más (la vigencia detectada entre
  * compra y renovación, o 1 año) y suma una renovación, que cuenta como sello en la tarjeta del cliente.
  */
-export async function renewSubscription(id: string): Promise<ActionState> {
-  if (!z.uuid().safeParse(id).success) return { ok: false, error: "Identificador inválido." };
+const renewSchema = z.object({
+  id: z.uuid("Identificador inválido"),
+  amount: z.coerce.number().min(0, "No puede ser negativo"),
+  cost: z.coerce.number().min(0, "No puede ser negativo"),
+  renewed_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
+  years: z.coerce.number().int().min(1).max(3),
+});
+
+export async function renewSubscription(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const parsed = renewSchema.safeParse({
+    id: str(fd, "id"),
+    amount: str(fd, "amount") || "0",
+    cost: str(fd, "cost") || "0",
+    renewed_at: str(fd, "renewed_at") || todayISO(),
+    years: str(fd, "years") || "1",
+  });
+  if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
+  const d = parsed.data;
   const { supabase } = await requireUser();
-  const { data, error } = await supabase.from("subscriptions").select("purchased_at,renews_at,renewals").eq("id", id).maybeSingle();
+  const { data, error } = await supabase.from("subscriptions").select("renews_at,renewals,currency").eq("id", d.id).maybeSingle();
   if (error) return { ok: false, error: error.message };
   if (!data) return { ok: false, error: "La suscripción no existe." };
-  const from: string = data.renews_at ?? todayISO();
-  let years = 1;
-  if (data.purchased_at && data.renews_at) {
-    for (const n of [1, 2, 3]) if (addYearsISO(data.purchased_at, n) === data.renews_at) years = n;
-  }
+  // El nuevo periodo empieza donde terminaba el anterior; si ya venció hace tiempo, desde el día del cobro.
+  const previous: string | null = data.renews_at ?? null;
+  const base = previous && previous >= d.renewed_at ? previous : d.renewed_at;
+  const next = addYearsISO(base, d.years);
   const upd = await supabase
     .from("subscriptions")
-    .update({ renews_at: addYearsISO(from, years), renewals: Number(data.renewals ?? 0) + 1, status: "active" })
-    .eq("id", id);
+    .update({ renews_at: next, renewals: Number(data.renewals ?? 0) + 1, status: "active" })
+    .eq("id", d.id);
   if (upd.error) return { ok: false, error: upd.error.message };
+  const ev = await supabase.from("renewal_events").insert({
+    subscription_id: d.id,
+    renewed_at: d.renewed_at,
+    amount: d.amount,
+    cost: d.cost,
+    currency: data.currency ?? "MXN",
+    from_date: previous,
+    to_date: next,
+  });
+  // Migración 0009 pendiente: la renovación se aplica igual, solo no queda el cobro registrado.
+  if (ev.error && !/renewal_events|schema cache/i.test(ev.error.message)) return { ok: false, error: ev.error.message };
   refresh();
   return { ok: true };
 }
