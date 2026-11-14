@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
+import { cookies } from "next/headers";
 import { requireUser } from "@/lib/auth";
-import { MobileNav, Sidebar } from "@/components/Sidebar";
+import { AppShell, SIDEBAR_COOKIE } from "@/components/AppShell";
 import { SchemaNotice } from "@/components/ui/SchemaNotice";
 import { pendingMigrations } from "@/lib/data";
 
@@ -10,16 +11,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const pending = await pendingMigrations().catch(() => []);
   // Vercel define VERCEL_GIT_COMMIT_SHA al compilar; sirve para saber qué versión está desplegada.
   const version = (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7);
+  const initialCollapsed = (await cookies()).get(SIDEBAR_COOKIE)?.value === "1";
   return (
-    <div className="min-h-screen overflow-x-clip">
-      <Sidebar email={email} version={version} />
-      <MobileNav version={version} />
-      <main className="min-w-0 md:pl-64">
-        <div className="mx-auto w-full min-w-0 max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
-          <SchemaNotice pending={pending} hasDatabaseUrl={Boolean(process.env.DATABASE_URL || process.env.SUPABASE_DB_PASSWORD)} />
-          {children}
-        </div>
-      </main>
-    </div>
+    <AppShell email={email} version={version} initialCollapsed={initialCollapsed}>
+      <SchemaNotice pending={pending} hasDatabaseUrl={Boolean(process.env.DATABASE_URL || process.env.SUPABASE_DB_PASSWORD)} />
+      {children}
+    </AppShell>
   );
 }
