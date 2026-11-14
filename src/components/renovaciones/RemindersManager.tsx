@@ -1,12 +1,12 @@
 "use client";
 
-import { AlertTriangle, BellRing, CheckCircle2, Mail, MailCheck, MailX, Send } from "lucide-react";
+import { AlertTriangle, BellRing, CheckCircle2, Mail, MailCheck, MailX, MessageCircle, Send } from "lucide-react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useState, useTransition } from "react";
 import { sendReminders, type SendResult } from "@/lib/actions";
 import type { EmailProvider } from "@/lib/email";
 import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
-import type { ReminderSettings } from "@/lib/reminders";
+import { daysPhrase, fillTemplate, whatsappLink, type ReminderSettings, type ReminderVars } from "@/lib/reminders";
 import { renewalTone } from "@/lib/renewal";
 import type { ReminderCandidate } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -42,6 +42,20 @@ export function RemindersManager({
   const [pending, start] = useTransition();
 
   const withEmail = candidates.filter((c) => c.emails.length > 0);
+  const waFor = (c: ReminderCandidate) => {
+    if (!c.phone) return null;
+    const vars: ReminderVars = {
+      cliente: c.client_name,
+      programas: c.products.join(", ") || "tu programa",
+      fecha_compra: fmtDate(c.purchased_at),
+      fecha_renovacion: fmtDate(c.renews_at),
+      dias: daysPhrase(c.days),
+      precio: fmtMoney(c.price, c.currency),
+      plataforma: c.platform ?? "nuestra tienda",
+      whatsapp: settings.whatsapp || "nuestro WhatsApp",
+    };
+    return whatsappLink(c.phone, fillTemplate(settings.whatsapp_body, vars));
+  };
   const allSelectable = withEmail.map((c) => c.subscription_id);
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -148,7 +162,7 @@ export function RemindersManager({
                 <Th>Vence</Th>
                 <Th className="text-right">Precio</Th>
                 <Th>Último aviso</Th>
-                <Th className="w-28" />
+                <Th className="w-44" />
               </tr>
             </thead>
             <tbody className="divide-y divide-navy-100">
@@ -207,9 +221,27 @@ export function RemindersManager({
                       )}
                     </Td>
                     <Td>
-                      <div className="flex justify-end">
+                      <div className="flex justify-end gap-1">
+                        {waFor(c) ? (
+                          <a
+                            href={waFor(c)!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Abrir WhatsApp con el mensaje escrito"
+                            className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#25D366] px-2.5 text-xs font-medium text-white hover:bg-[#1ebe5d]"
+                          >
+                            <MessageCircle size={13} /> WhatsApp
+                          </a>
+                        ) : (
+                          <span
+                            title="Sin teléfono: agrega el número en el contacto del cliente"
+                            className="inline-flex h-8 cursor-not-allowed items-center gap-1 rounded-lg bg-slate-100 px-2.5 text-xs text-slate-400"
+                          >
+                            <MessageCircle size={13} /> WhatsApp
+                          </span>
+                        )}
                         <Button size="sm" variant="secondary" disabled={c.emails.length === 0 || !resendReady || pending} onClick={() => setConfirm([c.subscription_id])}>
-                          <Send size={13} /> Enviar
+                          <Send size={13} /> Correo
                         </Button>
                       </div>
                     </Td>

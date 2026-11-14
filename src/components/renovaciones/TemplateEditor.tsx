@@ -1,9 +1,9 @@
 "use client";
 
-import { Eye, Save, Send } from "lucide-react";
+import { Eye, MessageCircle, Save, Send } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
 import { saveReminderSettings, sendReminderTest, type ActionState } from "@/lib/actions";
-import { reminderHtml, REMINDER_VARS, SAMPLE_VARS, type ReminderSettings } from "@/lib/reminders";
+import { fillTemplate, parseAutoDays, reminderHtml, REMINDER_VARS, SAMPLE_VARS, type ReminderSettings } from "@/lib/reminders";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
@@ -24,7 +24,12 @@ export function TemplateEditor({
   const [testState, testAction, testing] = useActionState<ActionState, FormData>(sendReminderTest, null);
   const e = saveState?.errors ?? testState?.errors ?? {};
   const set = (k: keyof ReminderSettings) => (ev: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setForm((f) => ({ ...f, [k]: k === "reminder_days" ? Number(ev.target.value) : ev.target.value }));
+    setForm((f) => ({
+      ...f,
+      [k]: k === "reminder_days" ? Number(ev.target.value) : k === "auto_remind" ? (ev.target as HTMLInputElement).checked : ev.target.value,
+    }));
+  const autoDays = parseAutoDays(form.auto_days);
+  const waPreview = fillTemplate(form.whatsapp_body, { ...SAMPLE_VARS, whatsapp: form.whatsapp || SAMPLE_VARS.whatsapp });
 
   // Vista previa en vivo con datos de ejemplo: lo que ves es exactamente lo que recibirá el cliente.
   const preview = useMemo(
@@ -72,6 +77,36 @@ export function TemplateEditor({
           <Field label="Logo (opcional)" error={e.logo_url} hint="Vacío = logotipo de PGPM MEX incluido en la app. Pon un enlace público a un PNG o JPG si quieres usar otro.">
             <Input name="logo_url" type="url" value={form.logo_url} onChange={set("logo_url")} placeholder="https://…/logo.png" />
           </Field>
+
+          <div className={`rounded-xl border p-4 ${form.auto_remind ? "border-emerald-200 bg-emerald-50/60" : "border-navy-100 bg-navy-50/60"}`}>
+            <label className="flex items-start gap-3">
+              <input type="checkbox" name="auto_remind" checked={form.auto_remind} onChange={set("auto_remind")} className="mt-1 accent-brand" />
+              <span>
+                <span className="block font-semibold text-navy-900">Enviar recordatorios automáticamente</span>
+                <span className="block text-xs text-slate-600">
+                  Cada día, la app manda este correo a los clientes cuya suscripción vence en los días indicados. No repite el aviso a quien ya lo recibió
+                  en esa semana. Los envíos quedan en “Último aviso” marcados como automáticos.
+                </span>
+              </span>
+            </label>
+            <div className="mt-3">
+              <Field label="Días antes del vencimiento" error={e.auto_days} hint={autoDays.length ? `Se avisará ${autoDays.map((d) => (d === 0 ? "el mismo día" : `${d} días antes`)).join(", ")}.` : "Escribe números separados por coma."}>
+                <Input name="auto_days" value={form.auto_days} onChange={set("auto_days")} placeholder="30,15,3" disabled={!form.auto_remind} />
+              </Field>
+            </div>
+          </div>
+
+          <Field
+            label="Mensaje de WhatsApp"
+            error={e.whatsapp_body}
+            hint="Lo abre el botón de WhatsApp en Renovaciones y en la ficha del cliente, ya escrito; tú solo pulsas enviar. Mismas variables."
+          >
+            <Textarea name="whatsapp_body" value={form.whatsapp_body} onChange={set("whatsapp_body")} className="min-h-[110px]" required />
+          </Field>
+          <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-[#e7ffdb] px-3 py-2 text-sm text-slate-800">
+            <MessageCircle size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+            <p className="whitespace-pre-wrap">{waPreview}</p>
+          </div>
           <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
             {saveState?.ok && <span className="mr-auto text-xs text-emerald-700">Plantilla guardada. Es la que se usará al enviar a clientes.</span>}
             {testState?.ok && <span className="mr-auto text-xs text-emerald-700">Prueba enviada a {testState.errors?._sent_to}. Revisa tu bandeja.</span>}

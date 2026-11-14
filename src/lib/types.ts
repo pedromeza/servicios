@@ -166,6 +166,7 @@ export type ReminderCandidate = {
   client_name: string;
   platform: string | null;
   emails: string[]; // correos de la suscripción, o el del contacto del cliente si lo tiene
+  phone: string | null; // número para wa.me, sacado del contacto del cliente
   products: string[];
   purchased_at: string | null;
   renews_at: string;

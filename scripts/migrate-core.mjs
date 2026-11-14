@@ -24,6 +24,7 @@ const BASELINE_CHECKS = {
   "0007_reminders.sql": `select to_regclass('public.settings') is not null`,
   "0008_subscription_trash.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='subscriptions' and column_name='deleted_at')`,
   "0009_renewal_events.sql": `select to_regclass('public.renewal_events') is not null`,
+  "0010_automation.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='settings' and column_name='auto_remind')`,
 };
 
 /**

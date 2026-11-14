@@ -13,7 +13,7 @@ import { LOYALTY } from "./loyalty";
 import { normalizeName } from "./names";
 import { splitEmails } from "./emails";
 import { sendEmail } from "./email";
-import { daysPhrase, DEFAULT_REMINDER, reminderHtml, SAMPLE_VARS, type ReminderSettings, type ReminderVars } from "./reminders";
+import { daysPhrase, DEFAULT_REMINDER, parseAutoDays, reminderHtml, SAMPLE_VARS, type ReminderSettings, type ReminderVars } from "./reminders";
 import { fmtDate, fmtMoney } from "./format";
 import { getReminderSettings, renewalCandidates } from "./data";
 import { MAX_LICENSE_SEATS } from "./types";
@@ -556,6 +556,9 @@ const settingsSchema = z.object({
   whatsapp: z.string().max(40),
   logo_url: z.url("Debe ser un enlace completo, con https://").or(z.literal("")),
   reminder_days: z.coerce.number().int().min(1, "Mínimo 1 día").max(365, "Máximo 365 días"),
+  auto_remind: z.boolean(),
+  auto_days: z.string().max(60).refine((v) => parseAutoDays(v).length > 0, "Indica al menos un número de días, p. ej. 30,15,3"),
+  whatsapp_body: z.string().min(1, "Escribe el mensaje de WhatsApp").max(2000),
 });
 
 function settingsFromForm(fd: FormData) {
@@ -567,6 +570,9 @@ function settingsFromForm(fd: FormData) {
     whatsapp: str(fd, "whatsapp"),
     logo_url: str(fd, "logo_url"),
     reminder_days: str(fd, "reminder_days") || String(DEFAULT_REMINDER.reminder_days),
+    auto_remind: fd.get("auto_remind") === "on",
+    auto_days: str(fd, "auto_days") || DEFAULT_REMINDER.auto_days,
+    whatsapp_body: fd.get("whatsapp_body")?.toString().replace(/\r\n/g, "\n").trim() || DEFAULT_REMINDER.whatsapp_body,
   });
 }
 
@@ -587,7 +593,8 @@ export async function saveReminderSettings(_prev: ActionState, fd: FormData): Pr
   const parsed = settingsFromForm(fd);
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
   const { supabase, user } = await requireUser();
-  const { error } = await supabase.from("settings").upsert({ user_id: user.id, ...parsed.data, updated_at: new Date().toISOString() });
+  const row = { ...parsed.data, auto_days: parseAutoDays(parsed.data.auto_days).join(",") };
+  const { error } = await supabase.from("settings").upsert({ user_id: user.id, ...row, updated_at: new Date().toISOString() });
   if (error) return { ok: false, error: error.message };
   refresh();
   return { ok: true };

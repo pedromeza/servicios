@@ -4,7 +4,7 @@ import { decrypt } from "./crypto";
 import { requireUser } from "./auth";
 import { addYearsISO, daysUntil } from "./format";
 import { buildCard, type LoyaltyCard, type Reward, type Stamp } from "./loyalty";
-import { DEFAULT_REMINDER, type ReminderSettings } from "./reminders";
+import { DEFAULT_REMINDER, whatsappNumber, type ReminderSettings } from "./reminders";
 import { splitEmails } from "./emails";
 import type {
   Account,
@@ -56,6 +56,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0007_reminders.sql", () => supabase.from("settings").select("user_id").limit(1)],
     ["0008_subscription_trash.sql", () => supabase.from("subscriptions").select("deleted_at").limit(1)],
     ["0009_renewal_events.sql", () => supabase.from("renewal_events").select("id").limit(1)],
+    ["0010_automation.sql", () => supabase.from("settings").select("auto_remind").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -339,7 +340,8 @@ export async function getClient(id: string) {
       sent_at: r.sent_at,
     }));
   const renewalEvents = events.filter((e) => subIds.has(e.subscription_id));
-  return { client, subscriptions, licenses, card, reminders, renewalEvents, money: renewalMoney(subscriptions, events) };
+  const settings = await getReminderSettings();
+  return { client, subscriptions, licenses, card, reminders, renewalEvents, money: renewalMoney(subscriptions, events), settings, phone: whatsappNumber(client.contact) };
 }
 
 // ---------------------------------------------------------------- Lealtad
@@ -414,6 +416,9 @@ export async function getReminderSettings(): Promise<ReminderSettings> {
     whatsapp: (r.whatsapp as string) || "",
     logo_url: (r.logo_url as string) || "",
     reminder_days: Number(r.reminder_days ?? DEFAULT_REMINDER.reminder_days),
+    auto_remind: Boolean(r.auto_remind ?? false),
+    auto_days: (r.auto_days as string) || DEFAULT_REMINDER.auto_days,
+    whatsapp_body: (r.whatsapp_body as string) || DEFAULT_REMINDER.whatsapp_body,
   };
 }
 
@@ -450,6 +455,7 @@ export async function renewalCandidates(days: number): Promise<ReminderCandidate
         client_name: s.client_name ?? "Sin cliente",
         platform: c?.platform ?? null,
         emails: s.emails.length > 0 ? s.emails : fromContact ? [fromContact] : [],
+        phone: whatsappNumber(contact),
         products: s.products,
         purchased_at: s.purchased_at,
         renews_at: s.renews_at as string,

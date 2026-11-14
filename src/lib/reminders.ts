@@ -12,6 +12,9 @@ export type ReminderSettings = {
   whatsapp: string;
   logo_url: string;
   reminder_days: number;
+  auto_remind: boolean; // el cron diario envía solo
+  auto_days: string; // "30,15,3"
+  whatsapp_body: string; // mensaje para el botón de WhatsApp (mismas variables)
 };
 
 export const REMINDER_VARS = [
@@ -41,7 +44,37 @@ Gracias por tu confianza.`,
   whatsapp: "",
   logo_url: "",
   reminder_days: 30,
+  auto_remind: false,
+  auto_days: "30,15,3",
+  whatsapp_body: `Hola {{cliente}}, te saludamos de PGPM MEX. Tu licencia de {{programas}} vence el {{fecha_renovacion}} ({{dias}}). ¿La renovamos? El pago es por Mercado Libre, igual que tu compra, y la activamos el mismo día. Quedamos atentos por aquí.`,
 };
+
+/** "30, 15,3" → [30, 15, 3] (enteros únicos, 0..365, de mayor a menor). */
+export function parseAutoDays(raw: string): number[] {
+  const set = new Set<number>();
+  for (const part of raw.split(/[^0-9]+/)) {
+    const n = Number.parseInt(part, 10);
+    if (Number.isInteger(n) && n >= 0 && n <= 365) set.add(n);
+  }
+  return [...set].sort((a, b) => b - a);
+}
+
+/** Teléfono para wa.me a partir de un contacto libre ("55 1234 5678 · correo@x.com"): dígitos, con lada de México si faltan. */
+export function whatsappNumber(contact: string | null | undefined): string | null {
+  if (!contact) return null;
+  // Toma la secuencia de dígitos más larga (ignorando el correo).
+  const candidates = contact.replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, " ").match(/[+\d][\d\s().-]{7,}\d/g) ?? [];
+  const digits = candidates.map((c) => c.replace(/\D/g, "")).sort((a, b) => b.length - a.length)[0];
+  if (!digits || digits.length < 10) return null;
+  if (digits.length === 10) return `52${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `52${digits.slice(1)}`; // 1 + 10 dígitos (formato viejo MX)
+  if (digits.length === 13 && digits.startsWith("521")) return `52${digits.slice(3)}`; // +52 1 ... (formato viejo MX)
+  return digits;
+}
+
+export function whatsappLink(number: string, text: string): string {
+  return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
+}
 
 export type ReminderVars = Record<(typeof REMINDER_VARS)[number][0], string>;
 

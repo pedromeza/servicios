@@ -1,4 +1,4 @@
-import { ArrowLeft, BellRing, Check, Gift, KeyRound, RefreshCw, Ticket } from "lucide-react";
+import { ArrowLeft, BellRing, Check, Gift, KeyRound, MessageCircle, RefreshCw, Ticket } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,6 +7,7 @@ import { Card, CardHeader, Table, Td, Th } from "@/components/ui/Card";
 import { getClient } from "@/lib/data";
 import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import { LOYALTY } from "@/lib/loyalty";
+import { daysPhrase, fillTemplate, whatsappLink, type ReminderVars } from "@/lib/reminders";
 import { renewalTone } from "@/lib/renewal";
 import { LICENSE_TERMS, SUB_PLANS, SUB_STATUS } from "@/lib/types";
 
@@ -16,7 +17,21 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
   const { id } = await params;
   const data = await getClient(id);
   if (!data) notFound();
-  const { client: c, subscriptions, licenses, card, reminders, renewalEvents, money } = data;
+  const { client: c, subscriptions, licenses, card, reminders, renewalEvents, money, settings, phone } = data;
+  const waFor = (s: (typeof subscriptions)[number]) => {
+    if (!phone) return null;
+    const vars: ReminderVars = {
+      cliente: c.name,
+      programas: s.products.join(", ") || "tu programa",
+      fecha_compra: fmtDate(s.purchased_at),
+      fecha_renovacion: fmtDate(s.renews_at),
+      dias: daysPhrase(daysUntil(s.renews_at) ?? 0),
+      precio: fmtMoney(s.price, s.currency),
+      plataforma: c.platform ?? "nuestra tienda",
+      whatsapp: settings.whatsapp || "nuestro WhatsApp",
+    };
+    return whatsappLink(phone, fillTemplate(settings.whatsapp_body, vars));
+  };
 
   const active = subscriptions.filter((s) => s.status === "active");
   const next = active
@@ -43,9 +58,25 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
           </p>
           {c.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{c.notes}</p>}
         </div>
-        <Link href={`/renovaciones`} className="inline-flex items-center gap-1 text-sm font-medium text-navy-700 hover:text-brand">
-          <BellRing size={14} /> Ir a Renovaciones
-        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {phone ? (
+            <a
+              href={whatsappLink(phone, `Hola ${c.name}, te saludamos de PGPM MEX.`)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-[#25D366] px-3 text-sm font-medium text-white hover:bg-[#1ebe5d]"
+            >
+              <MessageCircle size={15} /> WhatsApp
+            </a>
+          ) : (
+            <span className="text-xs text-slate-400" title="Agrega un teléfono en el contacto del cliente">
+              Sin teléfono para WhatsApp
+            </span>
+          )}
+          <Link href={`/renovaciones`} className="inline-flex items-center gap-1 text-sm font-medium text-navy-700 hover:text-brand">
+            <BellRing size={14} /> Ir a Renovaciones
+          </Link>
+        </div>
       </div>
 
       <div className="mb-6 grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-5">
@@ -122,6 +153,16 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                             </div>
                           ))}
                         </div>
+                      )}
+                      {waFor(s) && (
+                        <a
+                          href={waFor(s)!}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-3 inline-flex h-8 items-center gap-1 rounded-lg bg-[#25D366] px-2.5 text-xs font-medium text-white hover:bg-[#1ebe5d]"
+                        >
+                          <MessageCircle size={13} /> Recordar por WhatsApp
+                        </a>
                       )}
                     </div>
                   );
