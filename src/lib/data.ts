@@ -256,6 +256,36 @@ export async function listLicenses(filters: { q?: string; status?: string; kind?
     );
 }
 
+// ---------------------------------------------------------------- Detalle de cliente
+export type ClientReminder = { id: string; subscription_id: string; products: string; to: string | null; sent_at: string };
+
+export async function getClient(id: string) {
+  const { supabase } = await requireUser();
+  const [clients, subsAll, lics, cards, sent] = await Promise.all([
+    listClients(),
+    listSubscriptions(),
+    listLicenses(),
+    loyaltyCards(),
+    supabase.from("reminders").select("id,subscription_id,to_email_enc,sent_at").eq("kind", "client").order("sent_at", { ascending: false }),
+  ]);
+  const client = clients.find((c) => c.id === id);
+  if (!client) return null;
+  const subscriptions = subsAll.filter((s) => s.client_id === id).sort((a, b) => (b.purchased_at ?? "").localeCompare(a.purchased_at ?? ""));
+  const licenses = lics.filter((l) => l.client_id === id || l.seat_assignments.some((s) => s.client_id === id));
+  const card = cards.find((c) => c.client_id === id) ?? null;
+  const subIds = new Set(subscriptions.map((s) => s.id));
+  const reminders: ClientReminder[] = ((sent.error ? [] : (sent.data ?? [])) as any[])
+    .filter((r) => subIds.has(r.subscription_id))
+    .map((r) => ({
+      id: r.id,
+      subscription_id: r.subscription_id,
+      products: subscriptions.find((s) => s.id === r.subscription_id)?.products.join(", ") ?? "",
+      to: decrypt(r.to_email_enc),
+      sent_at: r.sent_at,
+    }));
+  return { client, subscriptions, licenses, card, reminders };
+}
+
 // ---------------------------------------------------------------- Lealtad
 export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
   const { supabase } = await requireUser();

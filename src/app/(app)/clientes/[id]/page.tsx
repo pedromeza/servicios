@@ -1,0 +1,247 @@
+import { ArrowLeft, BellRing, Check, Gift, KeyRound, RefreshCw, Ticket } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { Badge } from "@/components/ui/Badge";
+import { Card, CardHeader, Table, Td, Th } from "@/components/ui/Card";
+import { getClient } from "@/lib/data";
+import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
+import { LOYALTY } from "@/lib/loyalty";
+import { renewalTone } from "@/lib/renewal";
+import { LICENSE_TERMS, SUB_PLANS, SUB_STATUS } from "@/lib/types";
+
+export const metadata: Metadata = { title: "Detalle de cliente" };
+
+export default async function ClienteDetallePage({ params }: PageProps<"/clientes/[id]">) {
+  const { id } = await params;
+  const data = await getClient(id);
+  if (!data) notFound();
+  const { client: c, subscriptions, licenses, card, reminders } = data;
+
+  const active = subscriptions.filter((s) => s.status === "active");
+  const next = active
+    .filter((s) => s.renews_at)
+    .map((s) => s.renews_at as string)
+    .sort()[0];
+  const nextDays = daysUntil(next ?? null);
+  const sold = subscriptions.reduce((n, s) => n + s.price, 0);
+  const renewals = subscriptions.reduce((n, s) => n + s.renewals, 0);
+
+  return (
+    <>
+      <Link href="/clientes" className="mb-4 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-navy-900">
+        <ArrowLeft size={14} /> Clientes
+      </Link>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="break-words text-2xl font-bold tracking-tight text-navy-900">{c.name}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {c.platform ?? "Sin plataforma"}
+            {c.platform_ref ? ` · ${c.platform_ref}` : ""}
+            {c.contact ? ` · ${c.contact}` : ""}
+            {` · cliente desde ${fmtDate(c.created_at.slice(0, 10))}`}
+          </p>
+          {c.notes && <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{c.notes}</p>}
+        </div>
+        <Link href={`/renovaciones`} className="inline-flex items-center gap-1 text-sm font-medium text-navy-700 hover:text-brand">
+          <BellRing size={14} /> Ir a Renovaciones
+        </Link>
+      </div>
+
+      <div className="mb-6 grid min-w-0 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <Stat label="Suscripciones" value={String(subscriptions.length)} sub={`${active.length} activa${active.length === 1 ? "" : "s"}`} icon={<RefreshCw size={18} />} />
+        <Stat
+          label="Próxima renovación"
+          value={next ? fmtDate(next) : "—"}
+          sub={next ? renewalTone(nextDays).label : "Sin fechas"}
+          icon={<BellRing size={18} />}
+          accent={nextDays !== null && nextDays <= 30}
+        />
+        <Stat label="Renovaciones hechas" value={String(renewals)} sub={`${fmtMoney(sold)} vendido en total`} icon={<Check size={18} />} />
+        <Stat
+          label="Lealtad"
+          value={card ? `${card.progress} / ${LOYALTY.stampsPerReward}` : "—"}
+          sub={card ? (card.rewards_available > 0 ? `${card.rewards_available} premio por otorgar` : `${card.total_stamps} sellos en total`) : "Sin tarjeta"}
+          icon={<Gift size={18} />}
+          accent={Boolean(card && card.rewards_available > 0)}
+        />
+      </div>
+
+      <div className="grid min-w-0 gap-6">
+        <Card>
+          <CardHeader
+            title="Suscripciones y renovaciones"
+            description={`${subscriptions.length} registrada${subscriptions.length === 1 ? "" : "s"} · las vencidas y canceladas también aparecen`}
+            action={
+              <Link href={`/suscripciones?q=${encodeURIComponent(c.name)}`} className="text-sm font-medium text-navy-700 hover:text-brand">
+                Editar en Suscripciones
+              </Link>
+            }
+          />
+          {subscriptions.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-slate-500">Este cliente no tiene suscripciones. Agrégalas desde la sección Suscripciones.</p>
+          ) : (
+            <Table>
+              <thead className="border-b border-navy-100">
+                <tr>
+                  <Th>Programas</Th>
+                  <Th>Cuenta</Th>
+                  <Th>Correos</Th>
+                  <Th>Compra</Th>
+                  <Th>Renueva</Th>
+                  <Th>Renovada</Th>
+                  <Th className="text-right">Precio</Th>
+                  <Th>Estado</Th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy-100">
+                {subscriptions.map((s) => {
+                  const t = renewalTone(daysUntil(s.renews_at));
+                  return (
+                    <tr key={s.id}>
+                      <Td>
+                        <div className="text-slate-800">{s.products.join(", ")}</div>
+                        <div className="text-xs text-slate-400">
+                          {SUB_PLANS[s.plan]} · {s.seats} puesto{s.seats === 1 ? "" : "s"}
+                          {s.promo_months > 0 ? ` · +${s.promo_months} mes${s.promo_months === 1 ? "" : "es"} gratis` : ""}
+                        </div>
+                      </Td>
+                      <Td>
+                        <div className="text-slate-800">{s.account_label}</div>
+                        <div className="text-xs text-slate-400">{s.account_provider}</div>
+                      </Td>
+                      <Td>
+                        {s.emails.length === 0 ? (
+                          <span className="text-slate-400">—</span>
+                        ) : (
+                          s.emails.map((e) => (
+                            <div key={e} className="break-all text-xs text-slate-600">
+                              {e}
+                            </div>
+                          ))
+                        )}
+                      </Td>
+                      <Td className="whitespace-nowrap">{fmtDate(s.purchased_at)}</Td>
+                      <Td>
+                        <div className="whitespace-nowrap">{fmtDate(s.renews_at)}</div>
+                        {s.status === "active" && s.renews_at && (
+                          <Badge tone={t.tone} className="mt-1">
+                            {t.label}
+                          </Badge>
+                        )}
+                      </Td>
+                      <Td className="whitespace-nowrap">{s.renewals > 0 ? `${s.renewals} vez${s.renewals === 1 ? "" : "es"}` : <span className="text-slate-400">—</span>}</Td>
+                      <Td className="whitespace-nowrap text-right font-medium text-navy-900">{fmtMoney(s.price, s.currency)}</Td>
+                      <Td>
+                        <Badge tone={s.status === "active" ? "success" : s.status === "expired" ? "danger" : "neutral"}>{SUB_STATUS[s.status]}</Badge>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          )}
+        </Card>
+
+        <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+          <Card>
+            <CardHeader title="Licencias" description={`${licenses.length} asignada${licenses.length === 1 ? "" : "s"} (propias o por puesto)`} />
+            {licenses.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-slate-500">Sin licencias asignadas.</p>
+            ) : (
+              <ul className="divide-y divide-navy-100 text-sm">
+                {licenses.map((l) => {
+                  const seat = l.seat_assignments.find((s) => s.client_id === id);
+                  return (
+                    <li key={l.id} className="flex items-start justify-between gap-3 px-5 py-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 font-medium text-navy-900">
+                          {l.kind === "account" ? <KeyRound size={13} className="text-slate-400" /> : <Ticket size={13} className="text-slate-400" />}
+                          {l.product}
+                        </div>
+                        <div className="text-xs text-slate-500">
+                          {LICENSE_TERMS[l.term]}
+                          {l.expires_at ? ` · vence ${fmtDate(l.expires_at)}` : ""}
+                          {seat ? ` · puesto: ${seat.email ?? "sin correo"}` : l.kind === "account" ? " · cuenta principal" : ""}
+                        </div>
+                      </div>
+                      <Badge tone={l.status === "available" ? "success" : "neutral"}>{l.status === "available" ? "Disponible" : "Utilizada"}</Badge>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Recordatorios enviados"
+              description={reminders.length === 0 ? "Aún no se le ha enviado ninguno" : `${reminders.length} correo${reminders.length === 1 ? "" : "s"} de renovación`}
+            />
+            {reminders.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-slate-500">Cuando le mandes un recordatorio desde Renovaciones aparecerá aquí.</p>
+            ) : (
+              <ul className="divide-y divide-navy-100 text-sm">
+                {reminders.map((r) => (
+                  <li key={r.id} className="flex items-start justify-between gap-3 px-5 py-3">
+                    <div className="min-w-0">
+                      <div className="text-slate-800">{r.products || "Suscripción"}</div>
+                      <div className="break-all text-xs text-slate-500">{r.to ?? "—"}</div>
+                    </div>
+                    <span className="shrink-0 text-xs text-slate-500">{fmtDateTime(r.sent_at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+        </div>
+
+        {card && (
+          <Card>
+            <CardHeader
+              title="Tarjeta de lealtad"
+              description={`${card.total_stamps} sello${card.total_stamps === 1 ? "" : "s"} · ${card.rewards.length} premio${card.rewards.length === 1 ? "" : "s"} otorgado${card.rewards.length === 1 ? "" : "s"}`}
+              action={
+                <Link href="/lealtad" className="text-sm font-medium text-navy-700 hover:text-brand">
+                  Ver en Lealtad
+                </Link>
+              }
+            />
+            <div className="flex flex-wrap items-center gap-4 px-5 py-4">
+              <div className="flex items-center gap-2">
+                {Array.from({ length: LOYALTY.stampsPerReward }).map((_, i) => (
+                  <div
+                    key={i}
+                    className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-sm font-bold ${
+                      i < card.progress ? "border-brand bg-brand text-white" : "border-dashed border-slate-300 text-slate-300"
+                    }`}
+                  >
+                    {i < card.progress ? <Check size={16} strokeWidth={3} /> : i + 1}
+                  </div>
+                ))}
+              </div>
+              <p className="text-sm text-slate-600">
+                {card.rewards_available > 0
+                  ? `Tiene ${card.rewards_available} premio${card.rewards_available === 1 ? "" : "s"} por otorgar: ${LOYALTY.rewardLabel}.`
+                  : `Le falta${LOYALTY.stampsPerReward - card.progress === 1 ? "" : "n"} ${LOYALTY.stampsPerReward - card.progress} sello${LOYALTY.stampsPerReward - card.progress === 1 ? "" : "s"} para ${LOYALTY.rewardLabel}.`}
+              </p>
+            </div>
+          </Card>
+        )}
+      </div>
+    </>
+  );
+}
+
+function Stat({ label, value, sub, icon, accent }: { label: string; value: string; sub?: string; icon: React.ReactNode; accent?: boolean }) {
+  return (
+    <Card className="flex items-center justify-between px-4 py-3">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+        <p className="mt-0.5 truncate text-xl font-bold text-navy-900">{value}</p>
+        {sub && <p className="truncate text-xs text-slate-500">{sub}</p>}
+      </div>
+      <div className={`shrink-0 rounded-xl p-2.5 ${accent ? "bg-brand text-white" : "bg-navy-100 text-navy-700"}`}>{icon}</div>
+    </Card>
+  );
+}

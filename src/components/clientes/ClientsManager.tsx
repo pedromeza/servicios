@@ -1,6 +1,7 @@
 "use client";
 
-import { Pencil, Plus, Trash2, Users } from "lucide-react";
+import { ChevronRight, Pencil, Plus, Trash2, Users } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useState, useTransition } from "react";
 import { deleteClient } from "@/lib/actions";
 import type { Client } from "@/lib/types";
@@ -53,14 +54,16 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
                 <Th>Cliente</Th>
                 <Th>Contacto</Th>
                 <Th>Relación</Th>
-                <Th className="w-24" />
+                <Th className="w-32" />
               </tr>
             </thead>
             <tbody className="divide-y divide-navy-100">
               {clients.map((c) => (
                 <tr key={c.id} className="group hover:bg-navy-50/60">
                   <Td>
-                    <div className="font-medium text-navy-900">{c.name}</div>
+                    <Link href={`/clientes/${c.id}`} className="font-medium text-navy-900 hover:text-brand">
+                      {c.name}
+                    </Link>
                     {(c.platform || c.platform_ref) && (
                       <div className="mt-0.5 text-xs text-slate-500">
                         {c.platform}
@@ -85,6 +88,9 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
                       <Button size="icon" variant="ghost" aria-label="Eliminar" className="hover:text-red-600" onClick={() => setDeleting(c)}>
                         <Trash2 size={15} />
                       </Button>
+                      <Link href={`/clientes/${c.id}`} aria-label="Ver detalle" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
+                        <ChevronRight size={16} />
+                      </Link>
                     </div>
                   </Td>
                 </tr>
