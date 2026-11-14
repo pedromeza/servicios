@@ -277,6 +277,7 @@ const renewSchema = z.object({
   cost: z.coerce.number().min(0, "No puede ser negativo"),
   renewed_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
   years: z.coerce.number().int().min(1).max(3),
+  only_payment: z.boolean(), // solo anotar el cobro de una renovación ya hecha, sin mover fechas
 });
 
 export async function renewSubscription(_prev: ActionState, fd: FormData): Promise<ActionState> {
@@ -286,6 +287,7 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
     cost: str(fd, "cost") || "0",
     renewed_at: str(fd, "renewed_at") || todayISO(),
     years: str(fd, "years") || "1",
+    only_payment: fd.get("only_payment") === "on",
   });
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
   const d = parsed.data;
@@ -295,24 +297,35 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
   if (!data) return { ok: false, error: "La suscripción no existe." };
   // El nuevo periodo empieza donde terminaba el anterior; si ya venció hace tiempo, desde el día del cobro.
   const previous: string | null = data.renews_at ?? null;
-  const base = previous && previous >= d.renewed_at ? previous : d.renewed_at;
-  const next = addYearsISO(base, d.years);
-  const upd = await supabase
-    .from("subscriptions")
-    .update({ renews_at: next, renewals: Number(data.renewals ?? 0) + 1, status: "active" })
-    .eq("id", d.id);
-  if (upd.error) return { ok: false, error: upd.error.message };
+  let from_date = previous;
+  let to_date = previous;
+  if (!d.only_payment) {
+    const base = previous && previous >= d.renewed_at ? previous : d.renewed_at;
+    to_date = addYearsISO(base, d.years);
+    const upd = await supabase
+      .from("subscriptions")
+      .update({ renews_at: to_date, renewals: Number(data.renewals ?? 0) + 1, status: "active" })
+      .eq("id", d.id);
+    if (upd.error) return { ok: false, error: upd.error.message };
+  } else {
+    // La fecha ya está corrida: el cobro cubre hasta la renovación vigente.
+    from_date = previous ? addYearsISO(previous, -d.years) : null;
+  }
   const ev = await supabase.from("renewal_events").insert({
     subscription_id: d.id,
     renewed_at: d.renewed_at,
     amount: d.amount,
     cost: d.cost,
     currency: data.currency ?? "MXN",
-    from_date: previous,
-    to_date: next,
+    from_date,
+    to_date,
   });
-  // Migración 0009 pendiente: la renovación se aplica igual, solo no queda el cobro registrado.
-  if (ev.error && !/renewal_events|schema cache/i.test(ev.error.message)) return { ok: false, error: ev.error.message };
+  if (ev.error) {
+    if (/renewal_events|schema cache/i.test(ev.error.message)) {
+      return { ok: false, error: "Falta aplicar la migración 0009 (tabla renewal_events): el cobro no se pudo guardar. Revisa el aviso amarillo del panel." };
+    }
+    return { ok: false, error: ev.error.message };
+  }
   refresh();
   return { ok: true };
 }

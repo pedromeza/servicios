@@ -14,6 +14,7 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
   const [state, action] = useActionState<ActionState, FormData>(renewSubscription, null);
   const [years, setYears] = useState("1");
   const [renewedAt, setRenewedAt] = useState(todayISO());
+  const [onlyPayment, setOnlyPayment] = useState(false);
   useEffect(() => {
     if (state?.ok) onClose();
   }, [state, onClose]);
@@ -37,7 +38,7 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
           <Field label="Fecha del cobro" error={e.renewed_at}>
             <Input name="renewed_at" type="date" value={renewedAt} onChange={(ev) => setRenewedAt(ev.target.value)} />
           </Field>
-          <Field label="Renovar por" error={e.years} hint={`Nueva renovación: ${fmtDate(next)}.`}>
+          <Field label={onlyPayment ? "Periodo que cubrió" : "Renovar por"} error={e.years} hint={onlyPayment ? `Se registra como cobrado hasta ${fmtDate(s.renews_at)}.` : `Nueva renovación: ${fmtDate(next)}.`}>
             <Select name="years" value={years} onChange={(ev) => setYears(ev.target.value)}>
               {Object.entries(ACCOUNT_TERMS).map(([k, v]) => (
                 <option key={k} value={k}>
@@ -47,15 +48,24 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
             </Select>
           </Field>
         </div>
-        <p className="rounded-lg bg-navy-50 px-3 py-2 text-xs text-slate-600">
-          El periodo nuevo empieza donde termina el actual ({fmtDate(s.renews_at)}); si ya había vencido, desde la fecha del cobro. La suscripción queda
-          activa y el cliente suma un sello de lealtad.
-        </p>
+        <label className="flex items-start gap-2 rounded-lg border border-navy-100 px-3 py-2 text-sm text-slate-700">
+          <input type="checkbox" name="only_payment" checked={onlyPayment} onChange={(ev) => setOnlyPayment(ev.target.checked)} className="mt-0.5 accent-brand" />
+          <span>
+            <span className="font-medium text-navy-900">Solo registrar el cobro.</span> Úsalo para una renovación que ya hiciste antes: anota el importe sin
+            mover la fecha de renovación ni sumar otra renovación.
+          </span>
+        </label>
+        {!onlyPayment && (
+          <p className="rounded-lg bg-navy-50 px-3 py-2 text-xs text-slate-600">
+            El periodo nuevo empieza donde termina el actual ({fmtDate(s.renews_at)}); si ya había vencido, desde la fecha del cobro. La suscripción queda
+            activa y el cliente suma un sello de lealtad.
+          </p>
+        )}
         <div className="flex justify-end gap-2 pt-1">
           <Button variant="secondary" onClick={onClose}>
             Cancelar
           </Button>
-          <SubmitButton>Registrar renovación</SubmitButton>
+          <SubmitButton>{onlyPayment ? "Registrar cobro" : "Registrar renovación"}</SubmitButton>
         </div>
       </form>
     </Dialog>
