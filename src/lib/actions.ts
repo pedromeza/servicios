@@ -100,12 +100,24 @@ async function purgeRow(table: TrashTable, id: string, labelColumn: string): Pro
   return { ok: true };
 }
 
-export const restoreClient = (id: string) => restoreRow("clients", id, "name");
-export const purgeClient = (id: string) => purgeRow("clients", id, "name");
-export const restoreAccount = (id: string) => restoreRow("accounts", id, "label");
-export const purgeAccount = (id: string) => purgeRow("accounts", id, "label");
-export const restoreLicense = (id: string) => restoreRow("licenses", id, "product");
-export const purgeLicense = (id: string) => purgeRow("licenses", id, "product");
+export async function restoreClient(id: string): Promise<ActionState> {
+  return restoreRow("clients", id, "name");
+}
+export async function purgeClient(id: string): Promise<ActionState> {
+  return purgeRow("clients", id, "name");
+}
+export async function restoreAccount(id: string): Promise<ActionState> {
+  return restoreRow("accounts", id, "label");
+}
+export async function purgeAccount(id: string): Promise<ActionState> {
+  return purgeRow("accounts", id, "label");
+}
+export async function restoreLicense(id: string): Promise<ActionState> {
+  return restoreRow("licenses", id, "product");
+}
+export async function purgeLicense(id: string): Promise<ActionState> {
+  return purgeRow("licenses", id, "product");
+}
 
 // ---------------------------------------------------------------- Sesión
 export async function login(_prev: ActionState, formData: FormData): Promise<ActionState> {
@@ -188,7 +200,9 @@ export async function saveClient(_prev: ActionState, fd: FormData): Promise<Acti
   return { ok: true };
 }
 
-export const deleteClient = (id: string) => trashRow("clients", id, "name");
+export async function deleteClient(id: string): Promise<ActionState> {
+  return trashRow("clients", id, "name");
+}
 
 // ---------------------------------------------------------------- Cuentas
 const accountSchema = z.object({
@@ -249,7 +263,9 @@ export async function saveAccount(_prev: ActionState, fd: FormData): Promise<Act
   return { ok: true };
 }
 
-export const deleteAccount = (id: string) => trashRow("accounts", id, "label");
+export async function deleteAccount(id: string): Promise<ActionState> {
+  return trashRow("accounts", id, "label");
+}
 
 // ---------------------------------------------------------------- Suscripciones
 const subscriptionSchema = z.object({
@@ -388,9 +404,15 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
   return { ok: true };
 }
 
-export const deleteSubscription = (id: string) => trashRow("subscriptions", id, "products");
-export const restoreSubscription = (id: string) => restoreRow("subscriptions", id, "products");
-export const purgeSubscription = (id: string) => purgeRow("subscriptions", id, "products");
+export async function deleteSubscription(id: string): Promise<ActionState> {
+  return trashRow("subscriptions", id, "products");
+}
+export async function restoreSubscription(id: string): Promise<ActionState> {
+  return restoreRow("subscriptions", id, "products");
+}
+export async function purgeSubscription(id: string): Promise<ActionState> {
+  return purgeRow("subscriptions", id, "products");
+}
 
 export async function setSubscriptionStatus(id: string, status: "active" | "expired" | "cancelled"): Promise<ActionState> {
   const { supabase } = await requireUser();
@@ -524,7 +546,9 @@ export async function toggleLicenseUsed(id: string, used: boolean): Promise<Acti
   return { ok: true };
 }
 
-export const deleteLicense = (id: string) => trashRow("licenses", id, "product");
+export async function deleteLicense(id: string): Promise<ActionState> {
+  return trashRow("licenses", id, "product");
+}
 
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)
 // ---------------------------------------------------------------- Lealtad
