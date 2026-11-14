@@ -12,6 +12,7 @@ import { addMonthsISO, addYearsISO, todayISO } from "./format";
 import { LOYALTY } from "./loyalty";
 import { normalizeName } from "./names";
 import { splitEmails } from "./emails";
+import { parseMlWorkbook, type MlSale } from "./mercadolibre";
 import { sendEmail } from "./email";
 import { daysPhrase, DEFAULT_REMINDER, parseAutoDays, reminderHtml, SAMPLE_VARS, type ReminderSettings, type ReminderVars } from "./reminders";
 import { fmtDate, fmtMoney } from "./format";
@@ -653,6 +654,171 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
   }
   refresh();
   return { results };
+}
+
+// ---------------------------------------------------------------- Importar Mercado Libre
+export type MlPreviewRow = MlSale & { imported: boolean; client_exists: boolean };
+export type MlPreviewState =
+  | { ok: true; rows: MlPreviewRow[]; sheet: string; accounts: { value: string; label: string }[]; migrationPending: boolean }
+  | { ok: false; error: string }
+  | null;
+
+async function readUpload(fd: FormData): Promise<ArrayBuffer> {
+  const file = fd.get("file");
+  if (!(file instanceof File) || file.size === 0) throw new Error("Selecciona el archivo .xlsx del reporte de ventas.");
+  if (file.size > 8 * 1024 * 1024) throw new Error("El archivo es demasiado grande (máximo 8 MB).");
+  return file.arrayBuffer();
+}
+
+export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Promise<MlPreviewState> {
+  try {
+    const { supabase } = await requireUser();
+    const buf = await readUpload(fd);
+    const { sales, sheet } = await parseMlWorkbook(buf);
+    const [existing, clients, accounts] = await Promise.all([
+      supabase.from("subscriptions").select("ml_sale_id").not("ml_sale_id", "is", null),
+      supabase.from("clients").select("name"),
+      supabase.from("accounts").select("id,label,provider,username_enc").order("provider").order("label"),
+    ]);
+    const migrationPending = Boolean(existing.error && /ml_sale_id|schema cache/i.test(existing.error.message));
+    const imported = new Set(((existing.data ?? []) as { ml_sale_id: string }[]).map((r) => r.ml_sale_id));
+    const names = new Set(((clients.data ?? []) as { name: string }[]).map((c) => normalizeName(c.name)));
+    const rows: MlPreviewRow[] = sales.map((s) => ({ ...s, imported: imported.has(s.sale_id), client_exists: names.has(normalizeName(s.buyer)) }));
+    return {
+      ok: true,
+      rows,
+      sheet,
+      migrationPending,
+      accounts: ((accounts.data ?? []) as { id: string; provider: string; label: string; username_enc: string | null }[]).map((a) => ({
+        value: a.id,
+        label: `[${a.provider}] ${a.label} · ${decrypt(a.username_enc) ?? ""}`,
+      })),
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export type MlImportResult = { ok: boolean; error?: string; created: number; clients_created: number; skipped_imported: number; skipped_invalid: number; account_label?: string };
+
+const mlRowSchema = z.object({
+  sale_id: z.string().regex(/^\d{6,}$/),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  ok: z.boolean(),
+  buyer: z.string().min(1).max(200),
+  title: z.string().max(300),
+  products: z.array(z.string().min(1).max(80)).min(1),
+  years: z.number().int().min(1).max(3).nullable(),
+  units: z.number().int().min(1).max(100),
+  unit_price: z.number().min(0),
+  gross: z.number(),
+  fee: z.number(),
+  net: z.number(),
+  city: z.string().max(200),
+});
+
+export async function commitMlImport(_prev: MlImportResult | null, fd: FormData): Promise<MlImportResult> {
+  const base: MlImportResult = { ok: false, created: 0, clients_created: 0, skipped_imported: 0, skipped_invalid: 0 };
+  let rows: z.infer<typeof mlRowSchema>[];
+  try {
+    rows = z.array(mlRowSchema).max(5000).parse(JSON.parse(str(fd, "rows") || "[]"));
+  } catch {
+    return { ...base, error: "No pude leer las ventas de la vista previa. Vuelve a analizar el archivo." };
+  }
+  const accountChoice = str(fd, "account_id");
+  const { supabase } = await requireUser();
+
+  // Cuenta destino: una existente o la cuenta "Ventas Mercado Libre" (se crea si no existe).
+  let accountId = accountChoice;
+  let accountLabel = "";
+  if (!accountChoice || accountChoice === "__new__") {
+    const found = await supabase.from("accounts").select("id,label").eq("label", "Ventas Mercado Libre").maybeSingle();
+    if (found.data) {
+      accountId = found.data.id;
+      accountLabel = found.data.label;
+    } else {
+      const ins = await supabase
+        .from("accounts")
+        .insert({ provider: "Autodesk", label: "Ventas Mercado Libre", username_enc: encrypt("mercadolibre"), role: "admin", notes_enc: encrypt("Cuenta genérica para ventas importadas de Mercado Libre. Reasigna cada suscripción a su cuenta real al editarla.") })
+        .select("id,label")
+        .single();
+      if (ins.error) return { ...base, error: `No pude crear la cuenta destino: ${ins.error.message}` };
+      accountId = ins.data.id;
+      accountLabel = ins.data.label;
+    }
+  } else {
+    const acc = await supabase.from("accounts").select("id,label").eq("id", accountChoice).maybeSingle();
+    if (!acc.data) return { ...base, error: "La cuenta elegida no existe." };
+    accountLabel = acc.data.label;
+  }
+
+  const [existing, clientsRes] = await Promise.all([
+    supabase.from("subscriptions").select("ml_sale_id").not("ml_sale_id", "is", null),
+    supabase.from("clients").select("id,name"),
+  ]);
+  if (existing.error) {
+    if (/ml_sale_id|schema cache/i.test(existing.error.message)) return { ...base, error: "Falta aplicar la migración 0010 (columna ml_sale_id). Revisa el aviso amarillo del panel." };
+    return { ...base, error: existing.error.message };
+  }
+  const imported = new Set(((existing.data ?? []) as { ml_sale_id: string }[]).map((r) => r.ml_sale_id));
+  const clientByName = new Map(((clientsRes.data ?? []) as { id: string; name: string }[]).map((c) => [normalizeName(c.name), c.id]));
+
+  const result = { ...base, ok: true, account_label: accountLabel };
+  const today = todayISO();
+  for (const r of rows) {
+    if (!r.ok) {
+      result.skipped_invalid += 1;
+      continue;
+    }
+    if (imported.has(r.sale_id)) {
+      result.skipped_imported += 1;
+      continue;
+    }
+    // Cliente: existente por nombre, o nuevo con plataforma Mercado Libre.
+    let clientId = clientByName.get(normalizeName(r.buyer));
+    if (!clientId) {
+      const ins = await supabase
+        .from("clients")
+        .insert({ name: r.buyer, platform: "Mercado Libre", contact_enc: encrypt(r.city), notes_enc: null })
+        .select("id")
+        .single();
+      if (ins.error) return { ...result, ok: false, error: `Cliente “${r.buyer}”: ${ins.error.message}` };
+      clientId = ins.data.id;
+      clientByName.set(normalizeName(r.buyer), clientId!);
+      result.clients_created += 1;
+    }
+    const years = r.years ?? 1;
+    const purchased = r.date ?? today;
+    const renews = addYearsISO(purchased, years);
+    const notes = [
+      `Mercado Libre #${r.sale_id}`,
+      r.title,
+      `Cobrado ${r.gross.toFixed(2)} · comisión ML ${r.fee.toFixed(2)} · neto ${r.net.toFixed(2)}`,
+      r.years ? "" : "Vigencia no indicada en el título: se asumió 1 año.",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    const ins = await supabase.from("subscriptions").insert({
+      account_id: accountId,
+      client_id: clientId,
+      plan: "individual",
+      products: r.products,
+      seats: r.units,
+      purchased_at: purchased,
+      cost: 0,
+      price: Math.round(r.unit_price * r.units * 100) / 100,
+      currency: "MXN",
+      renews_at: renews,
+      status: renews >= today ? "active" : "expired",
+      notes_enc: encrypt(notes),
+      ml_sale_id: r.sale_id,
+    });
+    if (ins.error) return { ...result, ok: false, error: `Venta #${r.sale_id}: ${ins.error.message}` };
+    imported.add(r.sale_id);
+    result.created += 1;
+  }
+  refresh();
+  return result;
 }
 
 // ---------------------------------------------------------------- Migraciones
