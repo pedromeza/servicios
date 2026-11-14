@@ -1,10 +1,11 @@
 "use client";
 
-import { ChevronRight, Pencil, Plus, Trash2, Users } from "lucide-react";
+import { ChevronRight, Pencil, Plus, Trash2, Undo2, Users } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
-import { deleteClient } from "@/lib/actions";
-import { daysUntil, fmtDate } from "@/lib/format";
+import { deleteClient, purgeClient, restoreClient } from "@/lib/actions";
+import { daysUntil, fmtDate, fmtDateTime } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
 import type { Client } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -26,8 +27,10 @@ function summarize(products: string[]): [string, number][] {
 export function ClientsManager({ clients, paging, total, allNames }: { clients: Client[]; paging: Page; total: number; allNames: string[] }) {
   const [editing, setEditing] = useState<Client | "new" | null>(null);
   const [deleting, setDeleting] = useState<Client | null>(null);
+  const [purging, setPurging] = useState<Client | null>(null);
   const [nonce, setNonce] = useState(0);
   const [pending, start] = useTransition();
+  const inTrash = useSearchParams().get("estado") === "eliminados";
 
   const open = (c: Client | "new") => {
     setNonce((n) => n + 1);
@@ -46,13 +49,13 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
           </Button>
         }
       />
-      <FilterBar placeholder="Buscar por nombre, contacto o notas…" />
+      <FilterBar placeholder="Buscar por nombre, contacto o notas…" filters={[{ name: "estado", label: "Mostrar", options: [{ value: "eliminados", label: "Eliminados (papelera)" }] }]} />
       <Card>
         {clients.length === 0 ? (
           <EmptyState
             icon={<Users size={24} />}
-            title={total === 0 ? "Aún no tienes clientes" : "Sin resultados"}
-            description={total === 0 ? "Registra a quién le vendes cuentas, suscripciones o licencias." : "Prueba con otra búsqueda."}
+            title={inTrash ? "La papelera está vacía" : total === 0 ? "Aún no tienes clientes" : "Sin resultados"}
+            description={inTrash ? "Los clientes que elimines aparecerán aquí y podrás restaurarlos." : total === 0 ? "Registra a quién le vendes cuentas, suscripciones o licencias." : "Prueba con otra búsqueda."}
             action={total === 0 ? <Button onClick={() => open("new")}>Crear el primero</Button> : undefined}
           />
         ) : (
@@ -69,11 +72,16 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
             </thead>
             <tbody className="divide-y divide-navy-100">
               {clients.map((c) => (
-                <tr key={c.id} className="group hover:bg-navy-50/60">
+                <tr key={c.id} className={`group hover:bg-navy-50/60 ${c.deleted_at ? "bg-slate-50 text-slate-400" : ""}`}>
                   <Td>
-                    <Link href={`/clientes/${c.id}`} className="font-medium text-navy-900 hover:text-brand">
+                    <Link href={`/clientes/${c.id}`} className={`font-medium hover:text-brand ${c.deleted_at ? "text-slate-500 line-through decoration-slate-300" : "text-navy-900"}`}>
                       {c.name}
                     </Link>
+                    {c.deleted_at && (
+                      <Badge tone="danger" className="ml-2">
+                        <Trash2 size={11} /> Eliminado {fmtDateTime(c.deleted_at)}
+                      </Badge>
+                    )}
                     {(c.platform || c.platform_ref) && (
                       <div className="mt-0.5 text-xs text-slate-500">
                         {c.platform}
@@ -113,17 +121,28 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
                     </div>
                   </Td>
                   <Td>
-                    <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
-                      <Button size="icon" variant="ghost" aria-label="Editar" onClick={() => open(c)}>
-                        <Pencil size={15} />
-                      </Button>
-                      <Button size="icon" variant="ghost" aria-label="Eliminar" className="hover:text-red-600" onClick={() => setDeleting(c)}>
-                        <Trash2 size={15} />
-                      </Button>
-                      <Link href={`/clientes/${c.id}`} aria-label="Ver detalle" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
-                        <ChevronRight size={16} />
-                      </Link>
-                    </div>
+                    {c.deleted_at ? (
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="secondary" disabled={pending} onClick={() => start(() => restoreClient(c.id).then(() => undefined))}>
+                          <Undo2 size={14} /> Restaurar
+                        </Button>
+                        <Button size="icon" variant="ghost" aria-label="Eliminar definitivamente" className="hover:text-red-600" onClick={() => setPurging(c)}>
+                          <Trash2 size={15} />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
+                        <Button size="icon" variant="ghost" aria-label="Editar" onClick={() => open(c)}>
+                          <Pencil size={15} />
+                        </Button>
+                        <Button size="icon" variant="ghost" aria-label="Eliminar" className="hover:text-red-600" onClick={() => setDeleting(c)}>
+                          <Trash2 size={15} />
+                        </Button>
+                        <Link href={`/clientes/${c.id}`} aria-label="Ver detalle" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
+                          <ChevronRight size={16} />
+                        </Link>
+                      </div>
+                    )}
                   </Td>
                 </tr>
               ))}
@@ -142,12 +161,27 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
         onClose={() => setDeleting(null)}
         pending={pending}
         title="Eliminar cliente"
-        description={`Se eliminará "${deleting?.name}". Sus cuentas, suscripciones y licencias se conservan pero quedarán sin cliente asignado.`}
+        description={`"${deleting?.name}" pasará a la papelera y dejará de aparecer en las listas. Sus cuentas, suscripciones y licencias se conservan. Podrás restaurarlo desde Mostrar → Eliminados.`}
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
             await deleteClient(deleting.id);
             setDeleting(null);
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={purging !== null}
+        onClose={() => setPurging(null)}
+        pending={pending}
+        title="Eliminar definitivamente"
+        confirmLabel="Borrar para siempre"
+        description={`Se borrará para siempre "${purging?.name}". Sus suscripciones y licencias quedarán sin cliente. Esta acción no se puede deshacer.`}
+        onConfirm={() => {
+          if (!purging) return;
+          start(async () => {
+            await purgeClient(purging.id);
+            setPurging(null);
           });
         }}
       />

@@ -42,6 +42,71 @@ function refresh() {
   revalidatePath("/", "layout");
 }
 
+type Db = Awaited<ReturnType<typeof requireUser>>["supabase"];
+type AuditAction = "create" | "update" | "trash" | "restore" | "purge" | "renew" | "reward" | "remind" | "import";
+
+/** Historial de cambios: nunca falla la acción principal si la bitácora no se pudo escribir. */
+async function audit(supabase: Db, action: AuditAction, entity: string, entityId: string | null, detail: string) {
+  try {
+    const { error } = await supabase.from("audit_log").insert({ action, entity, entity_id: entityId, detail: detail.slice(0, 200) });
+    if (error && /detail|schema cache/i.test(error.message)) {
+      await supabase.from("audit_log").insert({ action, entity, entity_id: entityId }); // migración 0012 pendiente
+    }
+  } catch {}
+}
+
+type TrashTable = "clients" | "accounts" | "licenses" | "subscriptions";
+const TRASH_LABEL: Record<TrashTable, string> = { clients: "client", accounts: "account", licenses: "license", subscriptions: "subscription" };
+
+/** Papelera: marca deleted_at. Si la columna no existe aún (migración pendiente), borra como antes. */
+async function trashRow(table: TrashTable, id: string, labelColumn: string): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const row = await supabase.from(table).select(labelColumn).eq("id", id).maybeSingle();
+  const detail = (row.data as Record<string, unknown> | null)?.[labelColumn];
+  const { error } = await supabase.from(table).update({ deleted_at: new Date().toISOString() }).eq("id", id);
+  if (error) {
+    if (/deleted_at|schema cache/i.test(error.message)) {
+      const hard = await supabase.from(table).delete().eq("id", id);
+      if (hard.error) return { ok: false, error: hard.error.message };
+    } else {
+      return { ok: false, error: error.message };
+    }
+  }
+  await audit(supabase, "trash", TRASH_LABEL[table], id, typeof detail === "string" ? detail : "");
+  refresh();
+  return { ok: true };
+}
+
+async function restoreRow(table: TrashTable, id: string, labelColumn: string): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const row = await supabase.from(table).select(labelColumn).eq("id", id).maybeSingle();
+  const detail = (row.data as Record<string, unknown> | null)?.[labelColumn];
+  const { error } = await supabase.from(table).update({ deleted_at: null }).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  await audit(supabase, "restore", TRASH_LABEL[table], id, typeof detail === "string" ? detail : "");
+  refresh();
+  return { ok: true };
+}
+
+/** Borrado definitivo, solo de filas que ya están en la papelera. */
+async function purgeRow(table: TrashTable, id: string, labelColumn: string): Promise<ActionState> {
+  const { supabase } = await requireUser();
+  const row = await supabase.from(table).select(labelColumn).eq("id", id).maybeSingle();
+  const detail = (row.data as Record<string, unknown> | null)?.[labelColumn];
+  const { error } = await supabase.from(table).delete().eq("id", id).not("deleted_at", "is", null);
+  if (error) return { ok: false, error: error.message };
+  await audit(supabase, "purge", TRASH_LABEL[table], id, typeof detail === "string" ? detail : "");
+  refresh();
+  return { ok: true };
+}
+
+export const restoreClient = (id: string) => restoreRow("clients", id, "name");
+export const purgeClient = (id: string) => purgeRow("clients", id, "name");
+export const restoreAccount = (id: string) => restoreRow("accounts", id, "label");
+export const purgeAccount = (id: string) => purgeRow("accounts", id, "label");
+export const restoreLicense = (id: string) => restoreRow("licenses", id, "product");
+export const purgeLicense = (id: string) => purgeRow("licenses", id, "product");
+
 // ---------------------------------------------------------------- Sesión
 export async function login(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const email = str(formData, "email");
@@ -114,21 +179,16 @@ export async function saveClient(_prev: ActionState, fd: FormData): Promise<Acti
   const dup = (existing.data as { id: string; name: string }[]).find((c) => c.id !== d.id && normalizeName(c.name) === normalizeName(d.name));
   if (dup) return { ok: false, errors: { name: `Ya existe un cliente registrado como “${dup.name}”.` } };
   const payload = { name: d.name, contact_enc: encrypt(d.contact), platform: d.platform, platform_ref: d.platform_ref, notes_enc: encrypt(d.notes) };
-  const { error } = d.id
-    ? await supabase.from("clients").update(payload).eq("id", d.id)
-    : await supabase.from("clients").insert(payload);
-  if (error) return { ok: false, error: error.message };
+  const res = d.id
+    ? await supabase.from("clients").update(payload).eq("id", d.id).select("id").single()
+    : await supabase.from("clients").insert(payload).select("id").single();
+  if (res.error) return { ok: false, error: res.error.message };
+  await audit(supabase, d.id ? "update" : "create", "client", res.data.id, d.name);
   refresh();
   return { ok: true };
 }
 
-export async function deleteClient(id: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("clients").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  refresh();
-  return { ok: true };
-}
+export const deleteClient = (id: string) => trashRow("clients", id, "name");
 
 // ---------------------------------------------------------------- Cuentas
 const accountSchema = z.object({
@@ -180,21 +240,16 @@ export async function saveAccount(_prev: ActionState, fd: FormData): Promise<Act
   // Al editar, dejar la contraseña vacía conserva la actual.
   if (d.password !== "" || !d.id) payload.password_enc = encrypt(d.password);
 
-  const { error } = d.id
-    ? await supabase.from("accounts").update(payload).eq("id", d.id)
-    : await supabase.from("accounts").insert(payload);
-  if (error) return { ok: false, error: error.message };
+  const res = d.id
+    ? await supabase.from("accounts").update(payload).eq("id", d.id).select("id").single()
+    : await supabase.from("accounts").insert(payload).select("id").single();
+  if (res.error) return { ok: false, error: res.error.message };
+  await audit(supabase, d.id ? "update" : "create", "account", res.data.id, `${d.label} · ${d.provider}`);
   refresh();
   return { ok: true };
 }
 
-export async function deleteAccount(id: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("accounts").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  refresh();
-  return { ok: true };
-}
+export const deleteAccount = (id: string) => trashRow("accounts", id, "label");
 
 // ---------------------------------------------------------------- Suscripciones
 const subscriptionSchema = z.object({
@@ -260,10 +315,11 @@ export async function saveSubscription(_prev: ActionState, fd: FormData): Promis
     status: d.status,
     notes_enc: encrypt(d.notes),
   };
-  const { error } = d.id
-    ? await supabase.from("subscriptions").update(payload).eq("id", d.id)
-    : await supabase.from("subscriptions").insert(payload);
-  if (error) return { ok: false, error: error.message };
+  const res = d.id
+    ? await supabase.from("subscriptions").update(payload).eq("id", d.id).select("id").single()
+    : await supabase.from("subscriptions").insert(payload).select("id").single();
+  if (res.error) return { ok: false, error: res.error.message };
+  await audit(supabase, d.id ? "update" : "create", "subscription", res.data.id, d.products.join(", "));
   refresh();
   return { ok: true };
 }
@@ -327,43 +383,14 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
     }
     return { ok: false, error: ev.error.message };
   }
+  await audit(supabase, "renew", "subscription", d.id, `${d.only_payment ? "Cobro registrado" : "Renovada"} · ${fmtMoney(d.amount, data.currency ?? "MXN")}`);
   refresh();
   return { ok: true };
 }
 
-/** Manda la suscripción a la papelera (se oculta; se puede restaurar desde el filtro "Eliminadas"). */
-export async function deleteSubscription(id: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("subscriptions").update({ deleted_at: new Date().toISOString() }).eq("id", id);
-  if (error) {
-    // Migración 0008 pendiente (no existe deleted_at): se borra como antes.
-    if (/deleted_at|schema cache/i.test(error.message)) {
-      const hard = await supabase.from("subscriptions").delete().eq("id", id);
-      if (hard.error) return { ok: false, error: hard.error.message };
-    } else {
-      return { ok: false, error: error.message };
-    }
-  }
-  refresh();
-  return { ok: true };
-}
-
-export async function restoreSubscription(id: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("subscriptions").update({ deleted_at: null }).eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  refresh();
-  return { ok: true };
-}
-
-/** Borrado definitivo, solo desde la papelera. */
-export async function purgeSubscription(id: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("subscriptions").delete().eq("id", id).not("deleted_at", "is", null);
-  if (error) return { ok: false, error: error.message };
-  refresh();
-  return { ok: true };
-}
+export const deleteSubscription = (id: string) => trashRow("subscriptions", id, "products");
+export const restoreSubscription = (id: string) => restoreRow("subscriptions", id, "products");
+export const purgeSubscription = (id: string) => purgeRow("subscriptions", id, "products");
 
 export async function setSubscriptionStatus(id: string, status: "active" | "expired" | "cancelled"): Promise<ActionState> {
   const { supabase } = await requireUser();
@@ -470,6 +497,7 @@ export async function saveLicense(_prev: ActionState, fd: FormData): Promise<Act
     licenseId = (data as { id: string }).id;
   }
 
+  await audit(supabase, d.id ? "update" : "create", "license", licenseId, `${d.product} · ${d.kind === "account" ? "cuenta" : "clave"}`);
   // Los puestos se reemplazan completos: es la forma más simple de reflejar lo que quedó en el formulario.
   const del = await supabase.from("license_seats").delete().eq("license_id", licenseId);
   if (del.error) return { ok: false, error: del.error.message };
@@ -496,13 +524,7 @@ export async function toggleLicenseUsed(id: string, used: boolean): Promise<Acti
   return { ok: true };
 }
 
-export async function deleteLicense(id: string): Promise<ActionState> {
-  const { supabase } = await requireUser();
-  const { error } = await supabase.from("licenses").delete().eq("id", id);
-  if (error) return { ok: false, error: error.message };
-  refresh();
-  return { ok: true };
-}
+export const deleteLicense = (id: string) => trashRow("licenses", id, "product");
 
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)
 // ---------------------------------------------------------------- Lealtad
@@ -536,6 +558,7 @@ export async function grantReward(_prev: ActionState, fd: FormData): Promise<Act
     notes_enc: encrypt(d.notes),
   });
   if (error) return { ok: false, error: error.message };
+  await audit(supabase, "reward", "client", d.client_id, d.description);
   refresh();
   return { ok: true };
 }
@@ -649,6 +672,7 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
     const res = await sendEmail(c.emails, mail.subject, mail.html, mail.text);
     if (res.ok) {
       await supabase.from("reminders").insert({ subscription_id: id, to_email_enc: encrypt(c.emails.join(", ")), kind: "client" });
+      await audit(supabase, "remind", "subscription", id, `${c.client_name} · ${c.products.join(", ")}`);
     }
     results.push({ subscription_id: id, client: c.client_name, email: c.emails.join(", "), ok: res.ok, error: res.ok ? undefined : res.error });
   }
@@ -817,6 +841,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
     imported.add(r.sale_id);
     result.created += 1;
   }
+  await audit(supabase, "import", "subscription", null, `Mercado Libre: ${result.created} ventas, ${result.clients_created} clientes nuevos`);
   refresh();
   return result;
 }

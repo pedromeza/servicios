@@ -12,6 +12,23 @@ const ENTITY_LABEL: Record<string, string> = {
   account_password: "Contraseña de cuenta",
   license_key: "Clave de licencia",
   license_password: "Contraseña de licencia (cuenta)",
+  client: "Cliente",
+  account: "Cuenta",
+  subscription: "Suscripción",
+  license: "Licencia",
+};
+
+const ACTION_LABEL: Record<string, string> = {
+  reveal: "Consultó",
+  create: "Creó",
+  update: "Editó",
+  trash: "Envió a la papelera",
+  restore: "Restauró",
+  purge: "Borró definitivamente",
+  renew: "Renovó",
+  reward: "Otorgó premio a",
+  remind: "Envió recordatorio de",
+  import: "Importó",
 };
 
 export default async function SeguridadPage() {
@@ -68,17 +85,22 @@ export default async function SeguridadPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Bitácora de consultas" description="Cada vez que se revela o copia un secreto queda registrado" />
+            <CardHeader title="Historial" description="Consultas de secretos y cambios en clientes, cuentas, suscripciones y licencias" />
             {audit.length === 0 ? (
               <p className="px-5 py-6 text-sm text-slate-500">Todavía no se ha revelado ningún secreto.</p>
             ) : (
               <ul className="divide-y divide-navy-100 text-sm">
                 {audit.map((a) => (
                   <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-2.5">
-                    <span className="flex items-center gap-2 text-slate-800">
-                      {a.entity === "license_key" || a.entity === "license_password" ? <Ticket size={14} className="text-navy-600" /> : <KeyRound size={14} className="text-navy-600" />}
-                      {ENTITY_LABEL[a.entity] ?? a.entity}
-                      <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">{a.entity_id?.slice(0, 8)}</code>
+                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-slate-800">
+                      {a.entity.startsWith("license") ? <Ticket size={14} className="shrink-0 text-navy-600" /> : <KeyRound size={14} className="shrink-0 text-navy-600" />}
+                      <span className="text-slate-500">{ACTION_LABEL[a.action] ?? a.action}</span>
+                      <span>{ENTITY_LABEL[a.entity] ?? a.entity}</span>
+                      {a.detail ? (
+                        <span className="truncate font-medium text-navy-900">{a.detail}</span>
+                      ) : (
+                        <code className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] text-slate-500">{a.entity_id?.slice(0, 8)}</code>
+                      )}
                     </span>
                     <span className="whitespace-nowrap text-xs text-slate-500">{fmtDateTime(a.created_at)}</span>
                   </li>

@@ -1,9 +1,10 @@
 "use client";
 
 import { CheckCircle2, KeyRound, Pencil, Plus, Ticket, Trash2, Undo2, UserRound } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
-import { deleteLicense, toggleLicenseUsed } from "@/lib/actions";
-import { daysUntil, fmtDate } from "@/lib/format";
+import { deleteLicense, purgeLicense, restoreLicense, toggleLicenseUsed } from "@/lib/actions";
+import { daysUntil, fmtDate, fmtDateTime } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
 import { LICENSE_KINDS, LICENSE_STATUS, LICENSE_TERMS, type License, type Option } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -31,6 +32,8 @@ export function LicensesManager({
 }) {
   const [editing, setEditing] = useState<License | "new" | null>(null);
   const [deleting, setDeleting] = useState<License | null>(null);
+  const [purging, setPurging] = useState<License | null>(null);
+  const inTrash = useSearchParams().get("status") === "deleted";
   const [nonce, setNonce] = useState(0);
   const [pending, start] = useTransition();
   const open = (l: License | "new") => {
@@ -53,7 +56,7 @@ export function LicensesManager({
       <FilterBar
         placeholder="Buscar por producto, cliente, correo o terminación de la clave…"
         filters={[
-          { name: "status", label: "Estado", options: Object.entries(LICENSE_STATUS).map(([k, v]) => ({ value: k, label: v })) },
+          { name: "status", label: "Estado", options: [...Object.entries(LICENSE_STATUS).map(([k, v]) => ({ value: k, label: v })), { value: "deleted", label: "Eliminadas (papelera)" }] },
           { name: "kind", label: "Tipo", options: Object.keys(LICENSE_KINDS).map((k) => ({ value: k, label: k === "key" ? "Clave" : "Cuenta" })) },
           { name: "term", label: "Vigencia", options: Object.entries(LICENSE_TERMS).map(([k, v]) => ({ value: k, label: v })) },
         ]}
@@ -62,7 +65,7 @@ export function LicensesManager({
         {licenses.length === 0 ? (
           <EmptyState
             icon={<Ticket size={24} />}
-            title={total === 0 ? "Aún no guardas licencias" : "Sin resultados"}
+            title={inTrash ? "La papelera está vacía" : total === 0 ? "Aún no guardas licencias" : "Sin resultados"}
             description={total === 0 ? "Guarda tus claves de Windows, Office y más. Márcalas como utilizadas cuando las actives." : "Prueba con otros filtros."}
             action={total === 0 ? <Button onClick={() => open("new")}>Guardar la primera</Button> : undefined}
           />
@@ -82,9 +85,14 @@ export function LicensesManager({
             </thead>
             <tbody className="divide-y divide-navy-100">
               {licenses.map((l) => (
-                <tr key={l.id} className={`group hover:bg-navy-50/60 ${l.status === "used" ? "text-slate-500" : ""}`}>
+                <tr key={l.id} className={`group hover:bg-navy-50/60 ${l.deleted_at ? "bg-slate-50 text-slate-400" : l.status === "used" ? "text-slate-500" : ""}`}>
                   <Td>
-                    <div className={`font-medium ${l.status === "used" ? "text-slate-500 line-through decoration-slate-300" : "text-navy-900"}`}>{l.product}</div>
+                    <div className={`font-medium ${l.deleted_at || l.status === "used" ? "text-slate-500 line-through decoration-slate-300" : "text-navy-900"}`}>{l.product}</div>
+                    {l.deleted_at && (
+                      <Badge tone="danger" className="mt-0.5">
+                        <Trash2 size={11} /> Eliminada {fmtDateTime(l.deleted_at)}
+                      </Badge>
+                    )}
                     <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-400">
                       {l.kind === "account" ? <UserRound size={11} /> : <KeyRound size={11} />}
                       {l.kind === "account" ? `Cuenta · ${l.seat_assignments.length} de ${l.seats} puesto${l.seats === 1 ? "" : "s"}` : "Clave de producto"}
@@ -146,6 +154,16 @@ export function LicensesManager({
                   </Td>
                   <Td className="whitespace-nowrap">{fmtDate(l.used_at)}</Td>
                   <Td>
+                    {l.deleted_at ? (
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="secondary" disabled={pending} onClick={() => start(() => restoreLicense(l.id).then(() => undefined))}>
+                          <Undo2 size={14} /> Restaurar
+                        </Button>
+                        <Button size="icon" variant="ghost" aria-label="Eliminar definitivamente" className="hover:text-red-600" onClick={() => setPurging(l)}>
+                          <Trash2 size={15} />
+                        </Button>
+                      </div>
+                    ) : (
                     <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
                       <Button
                         size="sm"
@@ -171,6 +189,7 @@ export function LicensesManager({
                         <Trash2 size={15} />
                       </Button>
                     </div>
+                    )}
                   </Td>
                 </tr>
               ))}
@@ -188,7 +207,7 @@ export function LicensesManager({
         open={deleting !== null}
         onClose={() => setDeleting(null)}
         pending={pending}
-        title="Eliminar licencia"
+        title="Eliminar licencia (a la papelera)"
         description={
           deleting?.kind === "account"
             ? `Se eliminará la licencia de ${deleting.product} (cuenta ${deleting.account_email ?? "sin correo"}) y sus ${deleting.seat_assignments.length} puesto${deleting.seat_assignments.length === 1 ? "" : "s"} asignado${deleting.seat_assignments.length === 1 ? "" : "s"}. No podrás recuperarla.`
@@ -199,6 +218,21 @@ export function LicensesManager({
           start(async () => {
             await deleteLicense(deleting.id);
             setDeleting(null);
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={purging !== null}
+        onClose={() => setPurging(null)}
+        pending={pending}
+        title="Eliminar definitivamente"
+        confirmLabel="Borrar para siempre"
+        description={`Se borrará para siempre la licencia de ${purging?.product}. Esta acción no se puede deshacer.`}
+        onConfirm={() => {
+          if (!purging) return;
+          start(async () => {
+            await purgeLicense(purging.id);
+            setPurging(null);
           });
         }}
       />

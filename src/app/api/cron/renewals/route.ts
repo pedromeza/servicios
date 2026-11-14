@@ -5,7 +5,7 @@ import { decrypt, encrypt } from "@/lib/crypto";
 import { sendEmail, sendRenewalEmail, type RenewalItem } from "@/lib/email";
 import { splitEmails } from "@/lib/emails";
 import { addDaysISO, daysUntil, fmtDate, fmtMoney, todayISO } from "@/lib/format";
-import { daysPhrase, DEFAULT_REMINDER, parseAutoDays, reminderHtml, type ReminderSettings, type ReminderVars } from "@/lib/reminders";
+import { daysPhrase, DEFAULT_REMINDER, fillTemplate, parseAutoDays, reminderHtml, whatsappLink, whatsappNumber, type ReminderSettings, type ReminderVars } from "@/lib/reminders";
 import { createAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -130,9 +130,12 @@ export async function GET(req: NextRequest) {
   }
 
   // 2) Resumen diario al dueño.
+  const { data: ownerSettings } = await supabase.from("settings").select("whatsapp,whatsapp_body").limit(1).maybeSingle();
+  const waBody = (ownerSettings as any)?.whatsapp_body || DEFAULT_REMINDER.whatsapp_body;
+  const waOwn = (ownerSettings as any)?.whatsapp || "nuestro WhatsApp";
   const { data, error } = await supabase
     .from("subscriptions")
-    .select("renews_at, products, price, currency, account:accounts(label,provider), client:clients(name)")
+    .select("renews_at, purchased_at, products, price, currency, account:accounts(label,provider), client:clients(name,contact_enc,platform)")
     .eq("status", "active")
     .is("deleted_at", null)
     .not("renews_at", "is", null)
@@ -149,6 +152,21 @@ export async function GET(req: NextRequest) {
       days: daysUntil(r.renews_at) ?? 0,
       price: Number(r.price),
       currency: r.currency,
+      whatsapp_url: (() => {
+        const phone = whatsappNumber(decrypt(r.client?.contact_enc));
+        if (!phone) return null;
+        const vars: ReminderVars = {
+          cliente: r.client?.name ?? "cliente",
+          programas: (r.products ?? []).join(", ") || "tu programa",
+          fecha_compra: fmtDate(r.purchased_at),
+          fecha_renovacion: fmtDate(r.renews_at),
+          dias: daysPhrase(daysUntil(r.renews_at) ?? 0),
+          precio: fmtMoney(Number(r.price), r.currency),
+          plataforma: r.client?.platform ?? "nuestra tienda",
+          whatsapp: waOwn,
+        };
+        return whatsappLink(phone, fillTemplate(waBody, vars));
+      })(),
     }))
     .filter((i) => i.days < 0 || NOTIFY_AT_DAYS.has(i.days))
     .sort((a, b) => a.days - b.days);

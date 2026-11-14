@@ -1,10 +1,11 @@
 "use client";
 
-import { ChevronRight, KeyRound, Pencil, Plus, ShieldCheck, Trash2 } from "lucide-react";
+import { ChevronRight, KeyRound, Pencil, Plus, ShieldCheck, Trash2, Undo2 } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useCallback, useState, useTransition } from "react";
-import { deleteAccount } from "@/lib/actions";
-import { daysUntil, fmtDate } from "@/lib/format";
+import { deleteAccount, purgeAccount, restoreAccount } from "@/lib/actions";
+import { daysUntil, fmtDate, fmtDateTime } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
 import { ACCOUNT_ROLES, ACCOUNT_TERMS, PROVIDERS, type Account, type Option } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -32,6 +33,8 @@ export function AccountsManager({
 }) {
   const [editing, setEditing] = useState<Account | "new" | null>(null);
   const [deleting, setDeleting] = useState<Account | null>(null);
+  const [purging, setPurging] = useState<Account | null>(null);
+  const inTrash = useSearchParams().get("estado") === "eliminadas";
   const [nonce, setNonce] = useState(0);
   const [pending, start] = useTransition();
   const open = (a: Account | "new") => {
@@ -54,6 +57,7 @@ export function AccountsManager({
       <FilterBar
         placeholder="Buscar por nombre, correo, cliente…"
         filters={[
+          { name: "estado", label: "Mostrar", options: [{ value: "eliminadas", label: "Eliminadas (papelera)" }] },
           { name: "provider", label: "Proveedor", options: PROVIDERS.map((p) => ({ value: p, label: p })) },
           { name: "role", label: "Tipo", options: Object.entries(ACCOUNT_ROLES).map(([k, v]) => ({ value: k, label: v })) },
         ]}
@@ -62,7 +66,7 @@ export function AccountsManager({
         {accounts.length === 0 ? (
           <EmptyState
             icon={<KeyRound size={24} />}
-            title={total === 0 ? "Aún no tienes cuentas" : "Sin resultados"}
+            title={inTrash ? "La papelera está vacía" : total === 0 ? "Aún no tienes cuentas" : "Sin resultados"}
             description={total === 0 ? "Registra tus cuentas de Autodesk, Microsoft, Adobe… con su usuario y contraseña cifrados." : "Prueba con otros filtros."}
             action={total === 0 ? <Button onClick={() => open("new")}>Crear la primera</Button> : undefined}
           />
@@ -81,9 +85,14 @@ export function AccountsManager({
             </thead>
             <tbody className="divide-y divide-navy-100">
               {accounts.map((a) => (
-                <tr key={a.id} className="group hover:bg-navy-50/60">
+                <tr key={a.id} className={`group hover:bg-navy-50/60 ${a.deleted_at ? "bg-slate-50 text-slate-400" : ""}`}>
                   <Td>
-                    <Link href={`/cuentas/${a.id}`} className="font-medium text-navy-900 hover:text-brand">
+                    {a.deleted_at && (
+                      <Badge tone="danger" className="mb-1">
+                        <Trash2 size={11} /> Eliminada {fmtDateTime(a.deleted_at)}
+                      </Badge>
+                    )}
+                    <Link href={`/cuentas/${a.id}`} className={`font-medium hover:text-brand ${a.deleted_at ? "text-slate-500 line-through decoration-slate-300" : "text-navy-900"}`}>
                       {a.label}
                     </Link>
                     <div className="text-xs text-slate-400">{a.provider}</div>
@@ -124,17 +133,28 @@ export function AccountsManager({
                   </Td>
                   <Td>{a.subscriptions_count}</Td>
                   <Td>
-                    <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
-                      <Button size="icon" variant="ghost" aria-label="Editar" onClick={() => open(a)}>
-                        <Pencil size={15} />
-                      </Button>
-                      <Button size="icon" variant="ghost" aria-label="Eliminar" className="hover:text-red-600" onClick={() => setDeleting(a)}>
-                        <Trash2 size={15} />
-                      </Button>
-                      <Link href={`/cuentas/${a.id}`} aria-label="Ver detalle" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
-                        <ChevronRight size={16} />
-                      </Link>
-                    </div>
+                    {a.deleted_at ? (
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="secondary" disabled={pending} onClick={() => start(() => restoreAccount(a.id).then(() => undefined))}>
+                          <Undo2 size={14} /> Restaurar
+                        </Button>
+                        <Button size="icon" variant="ghost" aria-label="Eliminar definitivamente" className="hover:text-red-600" onClick={() => setPurging(a)}>
+                          <Trash2 size={15} />
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
+                        <Button size="icon" variant="ghost" aria-label="Editar" onClick={() => open(a)}>
+                          <Pencil size={15} />
+                        </Button>
+                        <Button size="icon" variant="ghost" aria-label="Eliminar" className="hover:text-red-600" onClick={() => setDeleting(a)}>
+                          <Trash2 size={15} />
+                        </Button>
+                        <Link href={`/cuentas/${a.id}`} aria-label="Ver detalle" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
+                          <ChevronRight size={16} />
+                        </Link>
+                      </div>
+                    )}
                   </Td>
                 </tr>
               ))}
@@ -153,12 +173,27 @@ export function AccountsManager({
         onClose={() => setDeleting(null)}
         pending={pending}
         title="Eliminar cuenta"
-        description={`Se eliminará "${deleting?.label}" junto con sus ${deleting?.subscriptions_count ?? 0} suscripciones. Esta acción no se puede deshacer.`}
+        description={`"${deleting?.label}" pasará a la papelera. Sus ${deleting?.subscriptions_count ?? 0} suscripciones se conservan. Podrás restaurarla desde Mostrar → Eliminadas.`}
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
             await deleteAccount(deleting.id);
             setDeleting(null);
+          });
+        }}
+      />
+      <ConfirmDialog
+        open={purging !== null}
+        onClose={() => setPurging(null)}
+        pending={pending}
+        title="Eliminar definitivamente"
+        confirmLabel="Borrar para siempre"
+        description={`Se borrará para siempre "${purging?.label}" junto con sus ${purging?.subscriptions_count ?? 0} suscripciones. Esta acción no se puede deshacer.`}
+        onConfirm={() => {
+          if (!purging) return;
+          start(async () => {
+            await purgeAccount(purging.id);
+            setPurging(null);
           });
         }}
       />

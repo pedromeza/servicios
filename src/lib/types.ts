@@ -80,6 +80,7 @@ export type Client = {
   platform_ref: string | null;
   notes: string | null;
   created_at: string;
+  deleted_at: string | null;
   accounts_count: number;
   subscriptions_count: number;
   active_subscriptions: number; // activas (no vencidas, no canceladas, no en papelera)
@@ -104,6 +105,7 @@ export type Account = {
   expires_at: string | null;
   notes: string | null;
   created_at: string;
+  deleted_at: string | null;
   subscriptions_count: number;
   children_count: number;
 };
@@ -158,6 +160,7 @@ export type License = {
   used_at: string | null;
   notes: string | null;
   created_at: string;
+  deleted_at: string | null;
 };
 
 export type ReminderCandidate = {
@@ -196,6 +199,7 @@ export type AuditEntry = {
   action: string;
   entity: string;
   entity_id: string | null;
+  detail: string | null;
   created_at: string;
 };
 

@@ -59,13 +59,14 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0009_renewal_events.sql", () => supabase.from("renewal_events").select("id").limit(1)],
     ["0010_automation.sql", () => supabase.from("settings").select("auto_remind").limit(1)],
     ["0011_price_list.sql", () => supabase.from("price_list").select("id").limit(1)],
+    ["0012_trash_history.sql", () => supabase.from("clients").select("deleted_at").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
 }
 
 // ---------------------------------------------------------------- Clientes
-export async function listClients(q = ""): Promise<Client[]> {
+export async function listClients(q = "", opts: { trash?: boolean } = {}): Promise<Client[]> {
   const { supabase } = await requireUser();
   const [clients, accounts, subs, lics] = await Promise.all([
     supabase.from("clients").select("*").order("name"),
@@ -86,6 +87,7 @@ export async function listClients(q = ""): Promise<Client[]> {
       platform_ref: r.platform_ref ?? null,
       notes: decrypt(r.notes_enc),
       created_at: r.created_at,
+      deleted_at: r.deleted_at ?? null,
       accounts_count: count(accounts.data, r.id),
       subscriptions_count: count(subs.data, r.id),
       active_subscriptions: activeOf(r.id).length,
@@ -100,14 +102,15 @@ export async function listClients(q = ""): Promise<Client[]> {
           .sort()[0] ?? null,
       licenses_count: count(lics.data, r.id),
     }))
+    .filter((c) => (opts.trash ? c.deleted_at !== null : c.deleted_at === null))
     .filter((c) => matches(q, [c.name, c.contact, c.notes, c.platform, c.platform_ref]));
 }
 
 export async function clientOptions(): Promise<Option[]> {
   const { supabase } = await requireUser();
-  const { data, error } = await supabase.from("clients").select("id,name").order("name");
+  const { data, error } = await supabase.from("clients").select("id,name,deleted_at").order("name");
   fail(error);
-  return (data as any[]).map((c) => ({ value: c.id, label: c.name }));
+  return (data as any[]).filter((c) => !c.deleted_at).map((c) => ({ value: c.id, label: c.name }));
 }
 
 // ---------------------------------------------------------------- Cuentas
@@ -141,15 +144,17 @@ async function loadAccounts(): Promise<Account[]> {
     expires_at: r.contracted_at && r.term_years ? addYearsISO(r.contracted_at, r.term_years) : null,
     notes: decrypt(r.notes_enc),
     created_at: r.created_at,
+    deleted_at: r.deleted_at ?? null,
     subscriptions_count: (subs.data ?? []).filter((s: any) => s.account_id === r.id && !s.deleted_at).length,
     children_count: rows.filter((c) => c.parent_account_id === r.id).length,
   }));
 }
 
-export async function listAccounts(filters: { q?: string; provider?: string; role?: string } = {}) {
+export async function listAccounts(filters: { q?: string; provider?: string; role?: string; trash?: boolean } = {}) {
   const all = await loadAccounts();
   return all.filter(
     (a) =>
+      (filters.trash ? a.deleted_at !== null : a.deleted_at === null) &&
       (!filters.provider || a.provider === filters.provider) &&
       (!filters.role || a.role === filters.role) &&
       matches(filters.q ?? "", [a.label, a.username, a.client_name, a.parent_label, a.notes]),
@@ -166,7 +171,7 @@ export async function getAccount(id: string) {
 }
 
 export async function accountOptions(): Promise<Option[]> {
-  const all = await loadAccounts();
+  const all = (await loadAccounts()).filter((a) => !a.deleted_at);
   return all.map((a) => ({
     value: a.id,
     label: `${a.label} · ${a.username}`,
@@ -256,10 +261,12 @@ export async function listLicenses(filters: { q?: string; status?: string; kind?
       used_at: r.used_at,
       notes: decrypt(r.notes_enc),
       created_at: r.created_at,
+      deleted_at: r.deleted_at ?? null,
     }))
+    .filter((l) => (filters.status === "deleted" ? l.deleted_at !== null : l.deleted_at === null))
     .filter(
       (l) =>
-        (!filters.status || l.status === filters.status) &&
+        (!filters.status || filters.status === "deleted" || l.status === filters.status) &&
         (!filters.kind || l.kind === filters.kind) &&
         (!filters.term || l.term === filters.term) &&
         matches(filters.q ?? "", [
@@ -350,7 +357,7 @@ export async function getClient(id: string) {
 export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
   const { supabase } = await requireUser();
   const [clients, subs, lics, seats, rewards] = await Promise.all([
-    supabase.from("clients").select("id,name").order("name"),
+    supabase.from("clients").select("id,name,deleted_at").order("name"),
     supabase.from("subscriptions").select("*"),
     supabase.from("licenses").select("*"),
     supabase.from("license_seats").select("id,client_id,created_at,license:licenses(product)"),
@@ -379,6 +386,7 @@ export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
     }
   }
   for (const l of (lics.data ?? []) as any[]) {
+    if (l.deleted_at) continue;
     push(l.client_id, { date: l.used_at ?? l.purchased_at ?? l.created_at?.slice(0, 10) ?? null, label: l.product, kind: "license" });
   }
   for (const s of (seats.error ? [] : (seats.data ?? [])) as any[]) {
@@ -399,6 +407,7 @@ export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
   }
 
   return ((clients.data ?? []) as any[])
+    .filter((c) => !c.deleted_at)
     .map((c) => buildCard(c.id, c.name, stampsByClient.get(c.id) ?? [], rewardsByClient.get(c.id) ?? []))
     .filter((card) => matches(q, [card.client_name]))
     .sort((a, b) => b.rewards_available - a.rewards_available || b.total_stamps - a.total_stamps || a.client_name.localeCompare(b.client_name));
@@ -498,10 +507,15 @@ export async function listAudit(limit = 50): Promise<AuditEntry[]> {
   const { supabase } = await requireUser();
   const { data, error } = await supabase
     .from("audit_log")
-    .select("id,action,entity,entity_id,created_at")
+    .select("id,action,entity,entity_id,detail,created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
-  fail(error);
+  if (error) {
+    if (!isMissingSchema(error)) fail(error);
+    const old = await supabase.from("audit_log").select("id,action,entity,entity_id,created_at").order("created_at", { ascending: false }).limit(limit);
+    fail(old.error);
+    return ((old.data ?? []) as any[]).map((r) => ({ ...r, detail: null })) as AuditEntry[];
+  }
   return data as AuditEntry[];
 }
 

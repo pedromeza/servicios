@@ -32,6 +32,7 @@ export type RenewalItem = {
   days: number;
   price: number;
   currency: string;
+  whatsapp_url?: string | null; // enlace wa.me con el mensaje listo, si el cliente tiene teléfono
 };
 
 function escapeHtml(s: string) {
@@ -45,7 +46,11 @@ function row(i: RenewalItem) {
     <td style="padding:10px 12px;border-bottom:1px solid #e3e9f4"><strong>${escapeHtml(i.client)}</strong><br><span style="color:#64748b;font-size:12px">${escapeHtml(i.account)} · ${escapeHtml(i.provider)}</span></td>
     <td style="padding:10px 12px;border-bottom:1px solid #e3e9f4">${escapeHtml(i.products)}</td>
     <td style="padding:10px 12px;border-bottom:1px solid #e3e9f4;white-space:nowrap">${fmtDate(i.renews_at)}<br><span style="color:${color};font-weight:600;font-size:12px">${when}</span></td>
-    <td style="padding:10px 12px;border-bottom:1px solid #e3e9f4;text-align:right;white-space:nowrap">${fmtMoney(i.price, i.currency)}</td>
+    <td style="padding:10px 12px;border-bottom:1px solid #e3e9f4;text-align:right;white-space:nowrap">${fmtMoney(i.price, i.currency)}${
+      i.whatsapp_url
+        ? `<br><a href="${escapeHtml(i.whatsapp_url)}" style="display:inline-block;margin-top:6px;background:#25D366;color:#fff;text-decoration:none;font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px">WhatsApp</a>`
+        : ""
+    }</td>
   </tr>`;
 }
 
