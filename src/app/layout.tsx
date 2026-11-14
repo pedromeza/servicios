@@ -9,9 +9,14 @@ export const metadata: Metadata = {
   title: { default: "PGPM MEX · Admin", template: "%s · PGPM MEX" },
   description: "Administración de cuentas, suscripciones y licencias.",
   robots: { index: false, follow: false },
+  applicationName: "PGPM MEX",
+  manifest: "/manifest.webmanifest",
+  icons: { icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }], apple: "/apple-touch-icon.png" },
+  // iPhone: pantalla completa al abrir desde el icono.
+  appleWebApp: { capable: true, title: "PGPM MEX", statusBarStyle: "black-translucent" },
 };
 
-export const viewport: Viewport = { themeColor: "#0b2244" };
+export const viewport: Viewport = { themeColor: "#0b2244", width: "device-width", initialScale: 1, viewportFit: "cover" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
