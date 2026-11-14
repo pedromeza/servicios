@@ -68,6 +68,56 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
       </div>
 
       <div className="grid min-w-0 gap-6">
+        {active.length > 0 && (
+          <Card>
+            <CardHeader
+              title="Licencias activas ahora"
+              description={`${active.reduce((n, s) => n + s.seats, 0)} puesto${active.reduce((n, s) => n + s.seats, 0) === 1 ? "" : "s"} en ${active.length} suscripci${active.length === 1 ? "ón" : "ones"} activa${active.length === 1 ? "" : "s"}`}
+            />
+            <div className="grid gap-3 px-5 py-4 sm:grid-cols-2 xl:grid-cols-3">
+              {active
+                .slice()
+                .sort((a, b) => (a.renews_at ?? "9999").localeCompare(b.renews_at ?? "9999"))
+                .map((s) => {
+                  const d = daysUntil(s.renews_at);
+                  const t = renewalTone(d);
+                  return (
+                    <div key={s.id} className={`rounded-xl border p-4 ${d !== null && d <= 30 ? "border-amber-200 bg-amber-50/60" : "border-navy-100 bg-navy-50/60"}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="font-semibold text-navy-900">{s.products.join(", ")}</div>
+                          <div className="text-xs text-slate-500">
+                            {s.seats} puesto{s.seats === 1 ? "" : "s"} · {s.account_label}
+                          </div>
+                        </div>
+                        <Badge tone={t.tone}>{t.label}</Badge>
+                      </div>
+                      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+                        <dt className="text-slate-500">Compra</dt>
+                        <dd className="text-slate-800">{fmtDate(s.purchased_at)}</dd>
+                        <dt className="text-slate-500">Renueva</dt>
+                        <dd className="font-medium text-slate-800">{fmtDate(s.renews_at)}</dd>
+                        <dt className="text-slate-500">Renovada</dt>
+                        <dd className="text-slate-800">{s.renewals > 0 ? `${s.renewals} vez${s.renewals === 1 ? "" : "es"}` : "nunca"}</dd>
+                        <dt className="text-slate-500">Precio</dt>
+                        <dd className="text-slate-800">{fmtMoney(s.price, s.currency)}</dd>
+                      </dl>
+                      {s.emails.length > 0 && (
+                        <div className="mt-2 border-t border-navy-100 pt-2 text-xs text-slate-600">
+                          {s.emails.map((e) => (
+                            <div key={e} className="break-all">
+                              {e}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </Card>
+        )}
+
         <Card>
           <CardHeader
             title="Suscripciones y renovaciones"

@@ -4,6 +4,8 @@ import { ChevronRight, Pencil, Plus, Trash2, Users } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useState, useTransition } from "react";
 import { deleteClient } from "@/lib/actions";
+import { daysUntil, fmtDate } from "@/lib/format";
+import { renewalTone } from "@/lib/renewal";
 import type { Client } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -13,6 +15,13 @@ import { FilterBar } from "@/components/ui/FilterBar";
 import { Pagination } from "@/components/ui/Pagination";
 import type { Page } from "@/lib/paging";
 import { ClientForm } from "./ClientForm";
+
+/** Agrupa programas repetidos: ["AutoCAD","AutoCAD","Revit"] → [["AutoCAD",2],["Revit",1]]. */
+function summarize(products: string[]): [string, number][] {
+  const m = new Map<string, number>();
+  for (const p of products) m.set(p, (m.get(p) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+}
 
 export function ClientsManager({ clients, paging, total, allNames }: { clients: Client[]; paging: Page; total: number; allNames: string[] }) {
   const [editing, setEditing] = useState<Client | "new" | null>(null);
@@ -53,6 +62,7 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
               <tr>
                 <Th>Cliente</Th>
                 <Th>Contacto</Th>
+                <Th>Licencias activas</Th>
                 <Th>Relación</Th>
                 <Th className="w-32" />
               </tr>
@@ -73,6 +83,28 @@ export function ClientsManager({ clients, paging, total, allNames }: { clients: 
                     {c.notes && <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400">{c.notes}</div>}
                   </Td>
                   <Td>{c.contact ?? <span className="text-slate-400">—</span>}</Td>
+                  <Td>
+                    {c.active_subscriptions === 0 ? (
+                      <span className="text-slate-400">Ninguna</span>
+                    ) : (
+                      <div className="min-w-[160px]">
+                        <div className="flex flex-wrap gap-1">
+                          {summarize(c.active_products).map(([p, n]) => (
+                            <Badge key={p} tone="success">
+                              {p}
+                              {n > 1 ? ` ×${n}` : ""}
+                            </Badge>
+                          ))}
+                        </div>
+                        {c.next_renewal && (
+                          <div className="mt-1 text-xs text-slate-500">
+                            Próxima: {fmtDate(c.next_renewal)}{" "}
+                            <span className={daysUntil(c.next_renewal)! <= 30 ? "font-medium text-amber-700" : ""}>({renewalTone(daysUntil(c.next_renewal)).label})</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </Td>
                   <Td>
                     <div className="flex flex-wrap gap-1">
                       <Badge tone="navy">{c.accounts_count} cuentas</Badge>

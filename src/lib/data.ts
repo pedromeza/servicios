@@ -64,11 +64,12 @@ export async function listClients(q = ""): Promise<Client[]> {
   const [clients, accounts, subs, lics] = await Promise.all([
     supabase.from("clients").select("*").order("name"),
     supabase.from("accounts").select("client_id"),
-    supabase.from("subscriptions").select("client_id,deleted_at"),
+    supabase.from("subscriptions").select("client_id,deleted_at,status,products,seats,renews_at"),
     supabase.from("licenses").select("client_id"),
   ]);
   fail(clients.error);
   const count = (rows: any[] | null, id: string) => (rows ?? []).filter((r) => r.client_id === id && !r.deleted_at).length;
+  const activeOf = (id: string) => ((subs.data ?? []) as any[]).filter((s) => s.client_id === id && !s.deleted_at && s.status === "active");
 
   return (clients.data as any[])
     .map<Client>((r) => ({
@@ -81,6 +82,16 @@ export async function listClients(q = ""): Promise<Client[]> {
       created_at: r.created_at,
       accounts_count: count(accounts.data, r.id),
       subscriptions_count: count(subs.data, r.id),
+      active_subscriptions: activeOf(r.id).length,
+      active_products: activeOf(r.id).flatMap((s) => {
+        const products: string[] = s.products?.length ? s.products : ["Suscripción"];
+        return Array.from({ length: Math.max(1, Number(s.seats ?? 1)) }).flatMap(() => products);
+      }),
+      next_renewal:
+        activeOf(r.id)
+          .map((s) => s.renews_at as string | null)
+          .filter((d): d is string => Boolean(d))
+          .sort()[0] ?? null,
       licenses_count: count(lics.data, r.id),
     }))
     .filter((c) => matches(q, [c.name, c.contact, c.notes, c.platform, c.platform_ref]));

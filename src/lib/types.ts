@@ -82,6 +82,9 @@ export type Client = {
   created_at: string;
   accounts_count: number;
   subscriptions_count: number;
+  active_subscriptions: number; // activas (no vencidas, no canceladas, no en papelera)
+  active_products: string[]; // programas activos, con repetidos si tiene varios puestos: ["AutoCAD", "AutoCAD", "Revit"]
+  next_renewal: string | null; // la renovación activa más cercana
   licenses_count: number;
 };
 
