@@ -2,6 +2,7 @@
 export const TERM_PRESETS = [1, 3, 6, 12, 24, 36] as const;
 
 export function termLabel(months: number): string {
+  if (months === 0) return "Permanente";
   if (months % 12 === 0) {
     const y = months / 12;
     return `${y} año${y === 1 ? "" : "s"}`;

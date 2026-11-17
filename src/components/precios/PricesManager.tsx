@@ -5,7 +5,8 @@ import { useCallback, useMemo, useState, useTransition } from "react";
 import { deletePriceItem, togglePriceItem } from "@/lib/actions";
 import { fmtMoney } from "@/lib/format";
 import { whatsappLink, whatsappNumber } from "@/lib/reminders";
-import { PRICE_TERMS, type PriceItem } from "@/lib/types";
+import type { PriceItem } from "@/lib/types";
+import { termLabel } from "@/lib/terms";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
@@ -49,7 +50,7 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
     const text = [
       `*Cotización PGPM MEX*${client ? ` · ${client}` : ""}`,
       "",
-      ...rows.map(({ l, p }) => `• ${p.product} · ${PRICE_TERMS[p.term_years]}${l.qty > 1 ? ` × ${l.qty}` : ""}: ${fmtMoney(p.price * l.qty, p.currency)}${p.notes ? ` (${p.notes})` : ""}`),
+      ...rows.map(({ l, p }) => `• ${p.product} · ${termLabel(p.term_months)}${l.qty > 1 ? ` × ${l.qty}` : ""}: ${fmtMoney(p.price * l.qty, p.currency)}${p.notes ? ` (${p.notes})` : ""}`),
       disc > 0 ? `• Descuento: -${fmtMoney(disc, currency)}` : "",
       "",
       `*Total: ${fmtMoney(total, currency)}*`,
@@ -83,8 +84,8 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
     if (listIntro.trim()) lines.splice(0, 0, listIntro.trim(), "");
     for (const [product, items] of byProduct) {
       lines.push(`*${product}*`);
-      for (const p of items.sort((a, b) => a.term_years - b.term_years)) {
-        lines.push(`  • ${PRICE_TERMS[p.term_years]}: ${fmtMoney(p.price, p.currency)}${p.notes ? ` (${p.notes})` : ""}`);
+      for (const p of items.sort((a, b) => a.term_months - b.term_months)) {
+        lines.push(`  • ${termLabel(p.term_months)}: ${fmtMoney(p.price, p.currency)}${p.notes ? ` (${p.notes})` : ""}`);
       }
     }
     lines.push("", paymentUrl ? `Pago seguro por Mercado Libre: ${paymentUrl}` : "Pago por Mercado Libre.", "Activación el mismo día. Atención por WhatsApp" + (whatsapp ? ` ${whatsapp}` : "") + ".");
@@ -135,7 +136,7 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
                       {p.notes && <div className="text-xs text-slate-400">{p.notes}</div>}
                     </Td>
                     <Td>
-                      <Badge tone={p.active ? "navy" : "neutral"}>{PRICE_TERMS[p.term_years]}</Badge>
+                      <Badge tone={p.active ? "navy" : "neutral"}>{termLabel(p.term_months)}</Badge>
                     </Td>
                     <Td className="whitespace-nowrap text-right font-medium text-navy-900">{fmtMoney(p.price, p.currency)}</Td>
                     <Td className="whitespace-nowrap text-right text-xs text-slate-500">{p.cost > 0 ? fmtMoney(p.price - p.cost, p.currency) : "—"}</Td>
@@ -180,7 +181,7 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
                     <Select value={l.itemId} onChange={(ev) => upd(l.key, { itemId: ev.target.value })} aria-label="Producto">
                       {active.map((p) => (
                         <option key={p.id} value={p.id}>
-                          {p.product} · {PRICE_TERMS[p.term_years]} · {fmtMoney(p.price, p.currency)}
+                          {p.product} · {termLabel(p.term_months)} · {fmtMoney(p.price, p.currency)}
                         </option>
                       ))}
                     </Select>
@@ -293,7 +294,7 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
         onClose={() => setDeleting(null)}
         pending={pending}
         title="Eliminar precio"
-        description={`Se eliminará “${deleting?.product} · ${deleting ? PRICE_TERMS[deleting.term_years] : ""}” de la lista.`}
+        description={`Se eliminará “${deleting?.product} · ${deleting ? termLabel(deleting.term_months) : ""}” de la lista.`}
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {

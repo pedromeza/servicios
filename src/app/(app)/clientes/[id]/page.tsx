@@ -236,7 +236,7 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                       <Td className="whitespace-nowrap">{s.renewals > 0 ? `${s.renewals} vez${s.renewals === 1 ? "" : "es"}` : <span className="text-slate-400">—</span>}</Td>
                       <Td className="whitespace-nowrap text-right font-medium text-navy-900">{fmtMoney(s.price, s.currency)}</Td>
                       <Td>
-                        <Badge tone={s.status === "active" ? "success" : s.status === "expired" ? "danger" : "neutral"}>{SUB_STATUS[s.status]}</Badge>
+                        <Badge tone={s.status === "active" ? "success" : s.status === "expired" ? "danger" : s.status === "not_renewed" ? "warning" : "neutral"}>{SUB_STATUS[s.status]}</Badge>
                       </Td>
                     </tr>
                   );

@@ -3,9 +3,11 @@
 import { Plus } from "lucide-react";
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { savePriceItem, type ActionState } from "@/lib/actions";
-import { CURRENCIES, LICENSE_PRODUCTS, PRICE_TERMS, PRODUCTS_BY_PROVIDER, type PriceItem } from "@/lib/types";
+import { CURRENCIES, LICENSE_PRODUCTS, PRODUCTS_BY_PROVIDER, type PriceItem } from "@/lib/types";
+import { ComboSelect } from "@/components/ui/ComboSelect";
+import { TermSelect } from "@/components/ui/TermSelect";
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, Input, Select } from "@/components/ui/Fields";
+import { Field, FormError, Input } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
 const ALL_PRODUCTS = Array.from(new Set([...Object.values(PRODUCTS_BY_PROVIDER).flat(), ...LICENSE_PRODUCTS]));
@@ -35,6 +37,8 @@ export function PriceForm({
 }) {
   const [state, action] = useActionState<ActionState, FormData>(savePriceItem, null);
   const [notes, setNotes] = useState(item?.notes ?? "");
+  const [termMonths, setTermMonths] = useState(item ? String(item.term_months || "") : "12");
+  const [currency, setCurrency] = useState(item?.currency ?? "MXN");
   const suggestions = useMemo(() => {
     const seen = new Set<string>();
     const out: string[] = [];
@@ -67,21 +71,11 @@ export function PriceForm({
         </datalist>
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Vigencia" error={e.term_years}>
-          <Select name="term_years" defaultValue={String(item?.term_years ?? 1)}>
-            {Object.entries(PRICE_TERMS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
+        <Field label="Vigencia" error={e.term_months} hint="Permanente, o meses/años; escribe otra, p. ej. 18 o 5 años.">
+          <TermSelect name="term_months" value={termMonths} onChange={setTermMonths} emptyLabel="Permanente" />
         </Field>
         <Field label="Moneda" error={e.currency}>
-          <Select name="currency" defaultValue={item?.currency ?? "MXN"}>
-            {CURRENCIES.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </Select>
+          <ComboSelect name="currency" value={currency} onChange={setCurrency} options={CURRENCIES.map((c) => ({ value: c, label: c }))} placeholder="Moneda" />
         </Field>
         <Field label="Precio al cliente" error={e.price}>
           <Input name="price" type="number" step="0.01" min={0} defaultValue={item?.price ?? ""} placeholder="0.00" required />

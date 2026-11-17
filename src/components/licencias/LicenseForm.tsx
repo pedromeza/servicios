@@ -15,7 +15,7 @@ import {
   type Option,
 } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
+import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
 type SeatRow = { key: number; email: string; client_id: string };
@@ -187,24 +187,20 @@ export function LicenseForm({
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Field label="Vigencia" error={e.term}>
-          <Select
+          <ComboSelect
             name="term"
             value={term}
-            onChange={(ev) => {
-              setTerm(ev.target.value);
-              if (ev.target.value === "annual") {
+            onChange={(v) => {
+              setTerm(v);
+              if (v === "annual") {
                 const from = purchasedAt || todayISO();
                 if (!purchasedAt) setPurchasedAt(from);
                 if (!expiresAt) setExpiresAt(addYearsISO(from, 1));
               }
             }}
-          >
-            {Object.entries(LICENSE_TERMS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
+            options={Object.entries(LICENSE_TERMS).map(([k, v]) => ({ value: k, label: v }))}
+            placeholder="Vigencia"
+          />
         </Field>
         <Field label="Fecha de compra" error={e.purchased_at}>
           <Input
@@ -226,13 +222,7 @@ export function LicenseForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Estado" error={e.status}>
-          <Select name="status" value={status} onChange={(ev) => setStatus(ev.target.value)}>
-            {Object.entries(LICENSE_STATUS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
+          <ComboSelect name="status" value={status} onChange={setStatus} options={Object.entries(LICENSE_STATUS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Estado" />
         </Field>
         <Field label={isAccount ? "Cliente de la cuenta principal" : "Cliente"} error={e.client_id} hint="Escribe para buscar; si no existe, lo creas desde aquí.">
           <ComboSelect

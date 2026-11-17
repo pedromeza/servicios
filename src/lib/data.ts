@@ -64,6 +64,8 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0013_members.sql", () => supabase.from("members").select("id").limit(1)],
     ["0014_renewal_scope.sql", () => supabase.from("renewal_events").select("plan").limit(1)],
     ["0015_term_months.sql", () => supabase.from("accounts").select("term_months").limit(1)],
+    ["0016_price_term_months.sql", () => supabase.from("price_list").select("term_months").limit(1)],
+
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -499,15 +501,17 @@ export async function renewalCandidates(days: number): Promise<ReminderCandidate
 // ---------------------------------------------------------------- Lista de precios
 export async function listPrices(): Promise<PriceItem[]> {
   const { supabase } = await requireUser();
-  const { data, error } = await supabase.from("price_list").select("*").order("sort").order("product").order("term_years");
+  const { data, error } = await supabase.from("price_list").select("*").order("sort").order("product");
   if (error) {
     if (isMissingSchema(error)) return []; // migración 0011 pendiente
     fail(error);
   }
-  return ((data ?? []) as any[]).map((r) => ({
+  return ((data ?? []) as any[])
+    .sort((a, b) => Number(a.sort ?? 0) - Number(b.sort ?? 0) || String(a.product).localeCompare(String(b.product)) || Number(a.term_months ?? 0) - Number(b.term_months ?? 0))
+    .map((r) => ({
     id: r.id,
     product: r.product,
-    term_years: Number(r.term_years ?? 1),
+    term_months: Number(r.term_months ?? Number(r.term_years ?? 1) * 12),
     price: Number(r.price),
     cost: Number(r.cost ?? 0),
     currency: r.currency ?? "MXN",

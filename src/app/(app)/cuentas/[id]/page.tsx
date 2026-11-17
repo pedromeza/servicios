@@ -124,7 +124,7 @@ export default async function CuentaDetallePage({ params }: PageProps<"/cuentas/
                           {s.status === "active" && <Badge tone={t.tone}>{t.label}</Badge>}
                         </Td>
                         <Td>
-                          <Badge tone={s.status === "active" ? "success" : s.status === "expired" ? "danger" : "neutral"}>{SUB_STATUS[s.status]}</Badge>
+                          <Badge tone={s.status === "active" ? "success" : s.status === "expired" ? "danger" : s.status === "not_renewed" ? "warning" : "neutral"}>{SUB_STATUS[s.status]}</Badge>
                         </Td>
                         <Td className="text-right font-medium text-navy-900">{fmtMoney(s.price, s.currency)}</Td>
                       </tr>

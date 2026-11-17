@@ -313,7 +313,7 @@ const subscriptionSchema = z.object({
   currency: z.enum(["MXN", "USD"]),
   renews_at: dateField,
   promo_months: z.coerce.number().int("Debe ser entero").min(0, "No puede ser negativo").max(24, "Máximo 24 meses"),
-  status: z.enum(["active", "expired", "cancelled"]),
+  status: z.enum(["active", "expired", "not_renewed", "cancelled"]),
   notes: z.string().max(2000),
 });
 
@@ -457,10 +457,16 @@ export async function purgeSubscription(id: string): Promise<ActionState> {
   return purgeRow("subscriptions", id, "products");
 }
 
-export async function setSubscriptionStatus(id: string, status: "active" | "expired" | "cancelled"): Promise<ActionState> {
+export async function setSubscriptionStatus(id: string, status: "active" | "expired" | "not_renewed" | "cancelled"): Promise<ActionState> {
   const { supabase } = await requireUser();
   const { error } = await supabase.from("subscriptions").update({ status }).eq("id", id);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    if (status === "not_renewed" && /status_check|violates check/i.test(error.message)) {
+      return { ok: false, error: "Falta aplicar la migración 0017 para el estado “No renovada”. Revisa el aviso amarillo del panel." };
+    }
+    return { ok: false, error: error.message };
+  }
+  await audit(supabase, "update", "subscription", id, `Estado: ${status === "not_renewed" ? "No renovada" : status}`);
   refresh();
   return { ok: true };
 }
@@ -917,7 +923,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
 const priceSchema = z.object({
   id: z.uuid().nullable(),
   product: z.string().min(1, "Indica el producto").max(120),
-  term_years: z.coerce.number().int().min(0).max(3),
+  term_months: z.coerce.number().int().min(0).max(120, "Máximo 120 meses"),
   price: z.coerce.number().min(0, "No puede ser negativo"),
   cost: z.coerce.number().min(0, "No puede ser negativo"),
   currency: z.enum(["MXN", "USD"]),
@@ -929,7 +935,7 @@ export async function savePriceItem(_prev: ActionState, fd: FormData): Promise<A
   const parsed = priceSchema.safeParse({
     id: orNull(str(fd, "id")),
     product: str(fd, "product"),
-    term_years: str(fd, "term_years") || "1",
+    term_months: str(fd, "term_months") || "0",
     price: str(fd, "price") || "0",
     cost: str(fd, "cost") || "0",
     currency: str(fd, "currency") || "MXN",
@@ -939,8 +945,22 @@ export async function savePriceItem(_prev: ActionState, fd: FormData): Promise<A
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
   const d = parsed.data;
   const { supabase } = await requireUser();
-  const payload = { product: d.product, term_years: d.term_years, price: d.price, cost: d.cost, currency: d.currency, notes: orNull(d.notes), active: d.active };
-  const { error } = d.id ? await supabase.from("price_list").update(payload).eq("id", d.id) : await supabase.from("price_list").insert(payload);
+  const payload: Record<string, unknown> = {
+    product: d.product,
+    term_months: d.term_months,
+    // Compatibilidad con la columna anterior (0 a 3 años exactos; si no, se deja en 1).
+    term_years: d.term_months % 12 === 0 && d.term_months <= 36 ? d.term_months / 12 : 1,
+    price: d.price,
+    cost: d.cost,
+    currency: d.currency,
+    notes: orNull(d.notes),
+    active: d.active,
+  };
+  let { error } = d.id ? await supabase.from("price_list").update(payload).eq("id", d.id) : await supabase.from("price_list").insert(payload);
+  if (error && /term_months|schema cache/i.test(error.message)) {
+    delete payload.term_months; // migración 0016 pendiente
+    ({ error } = d.id ? await supabase.from("price_list").update(payload).eq("id", d.id) : await supabase.from("price_list").insert(payload));
+  }
   if (error) {
     if (/price_list|schema cache/i.test(error.message)) return { ok: false, error: "Falta aplicar la migración 0011 (tabla price_list). Revisa el aviso amarillo del panel." };
     return { ok: false, error: error.message };

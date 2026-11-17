@@ -22,7 +22,7 @@ function termFor(purchasedAt: string, renewsAt: string, promoMonths: number): st
 
 const toMonths = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
+import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
 export function SubscriptionForm({
@@ -44,6 +44,7 @@ export function SubscriptionForm({
   const [clientList, setClientList] = useState<Option[]>(clients);
   const [plan, setPlan] = useState<string>(sub?.plan ?? "individual");
   const [status, setStatus] = useState<string>(sub?.status ?? "active");
+  const [currency, setCurrency] = useState<string>(sub?.currency ?? "MXN");
   const [emailText, setEmailText] = useState<string>(sub?.email ?? "");
   const [seatsText, setSeatsText] = useState<string>(String(sub?.seats ?? 1));
   const emailCount = splitEmails(emailText).length;
@@ -213,22 +214,12 @@ export function SubscriptionForm({
           <Input name="price" type="number" step="0.01" min={0} defaultValue={sub?.price ?? ""} placeholder="0.00" />
         </Field>
         <Field label="Moneda" error={e.currency}>
-          <Select name="currency" defaultValue={sub?.currency ?? "MXN"}>
-            {CURRENCIES.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </Select>
+          <ComboSelect name="currency" value={currency} onChange={setCurrency} options={CURRENCIES.map((c) => ({ value: c, label: c }))} placeholder="Moneda" />
         </Field>
       </div>
 
       <Field label="Estado" error={e.status}>
-        <Select name="status" value={status} onChange={(ev) => setStatus(ev.target.value)}>
-          {Object.entries(SUB_STATUS).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
-            </option>
-          ))}
-        </Select>
+        <ComboSelect name="status" value={status} onChange={setStatus} options={Object.entries(SUB_STATUS).map(([k, v]) => ({ value: k, label: v }))} placeholder="Estado" />
       </Field>
 
       <Field label="Notas" error={e.notes} hint="Se guardan cifradas.">

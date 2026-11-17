@@ -51,7 +51,7 @@ export type AccountRole = keyof typeof ACCOUNT_ROLES;
 export const SUB_PLANS = { individual: "Producto individual", suite: "Suite / colección completa" } as const;
 export type SubPlan = keyof typeof SUB_PLANS;
 
-export const SUB_STATUS = { active: "Activa", expired: "Vencida", cancelled: "Cancelada" } as const;
+export const SUB_STATUS = { active: "Activa", expired: "Vencida", not_renewed: "No renovada", cancelled: "Cancelada" } as const;
 export type SubStatus = keyof typeof SUB_STATUS;
 
 export const LICENSE_STATUS = { available: "Disponible", used: "Utilizada" } as const;
@@ -183,7 +183,7 @@ export type ReminderCandidate = {
 export type PriceItem = {
   id: string;
   product: string;
-  term_years: number; // 0 = permanente
+  term_months: number; // 0 = permanente
   price: number;
   cost: number;
   currency: string;
@@ -191,8 +191,6 @@ export type PriceItem = {
   active: boolean;
   sort: number;
 };
-
-export const PRICE_TERMS: Record<number, string> = { 0: "Permanente", 1: "1 año", 2: "2 años", 3: "3 años" };
 
 export type AuditEntry = {
   id: number;

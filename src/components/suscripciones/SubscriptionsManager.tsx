@@ -157,9 +157,14 @@ export function SubscriptionsManager({
                         aria-label="Cambiar estado"
                         disabled={s.deleted_at !== null}
                         value={s.status}
-                        onChange={(ev) => start(() => setSubscriptionStatus(s.id, ev.target.value as Subscription["status"]).then(() => undefined))}
+                        onChange={(ev) =>
+                          start(async () => {
+                            const res = await setSubscriptionStatus(s.id, ev.target.value as Subscription["status"]);
+                            if (res && !res.ok && res.error) window.alert(res.error);
+                          })
+                        }
                         className={`rounded-full border-0 py-0.5 pl-2 pr-6 text-xs font-medium focus:ring-2 focus:ring-brand/50 ${
-                          s.status === "active" ? "bg-emerald-50 text-emerald-700" : s.status === "expired" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-600"
+                          s.status === "active" ? "bg-emerald-50 text-emerald-700" : s.status === "expired" ? "bg-red-50 text-red-700" : s.status === "not_renewed" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"
                         }`}
                       >
                         {Object.entries(SUB_STATUS).map(([k, v]) => (

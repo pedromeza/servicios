@@ -8,7 +8,7 @@ import { addMonthsISO, fmtDate, todayISO } from "@/lib/format";
 import { TermSelect } from "@/components/ui/TermSelect";
 import { ACCOUNT_ROLES, type Account, type Option } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
+import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
 export function AccountForm({
@@ -65,13 +65,7 @@ export function AccountForm({
           />
         </Field>
         <Field label="Tipo de cuenta" error={e.role}>
-          <Select name="role" value={role} onChange={(ev) => setRole(ev.target.value)}>
-            {Object.entries(ACCOUNT_ROLES).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
+          <ComboSelect name="role" value={role} onChange={setRole} options={Object.entries(ACCOUNT_ROLES).map(([k, v]) => ({ value: k, label: v }))} placeholder="Tipo de cuenta" />
         </Field>
       </div>
 

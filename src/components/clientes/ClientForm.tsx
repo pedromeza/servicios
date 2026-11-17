@@ -7,7 +7,8 @@ import { findSimilarNames } from "@/lib/names";
 import { CLIENT_PLATFORMS } from "@/lib/reminders";
 import type { Client } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
-import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
+import { Field, FormError, Input, Textarea } from "@/components/ui/Fields";
+import { ComboSelect } from "@/components/ui/ComboSelect";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
 export function ClientForm({
@@ -23,6 +24,8 @@ export function ClientForm({
 }) {
   const [state, action] = useActionState<ActionState, FormData>(saveClient, null);
   const [name, setName] = useState(client?.name ?? "");
+  const [platform, setPlatform] = useState(client?.platform ?? "");
+  const [platformList, setPlatformList] = useState<string[]>(() => Array.from(new Set([...CLIENT_PLATFORMS, ...(client?.platform ? [client.platform] : [])])));
   useEffect(() => {
     if (state?.ok) onDone();
   }, [state, onDone]);
@@ -65,17 +68,19 @@ export function ClientForm({
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Plataforma" error={e.platform} hint="Por dónde llegó o compra.">
-          <Select name="platform" defaultValue={client?.platform ?? ""}>
-            <option value="">Sin especificar</option>
-            {CLIENT_PLATFORMS.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-            {client?.platform && !CLIENT_PLATFORMS.includes(client.platform as (typeof CLIENT_PLATFORMS)[number]) && (
-              <option value={client.platform}>{client.platform}</option>
-            )}
-          </Select>
+          <ComboSelect
+            name="platform"
+            value={platform}
+            onChange={setPlatform}
+            options={platformList.map((p) => ({ value: p, label: p }))}
+            emptyLabel="Sin especificar"
+            placeholder="Buscar o escribir plataforma…"
+            createLabel="Agregar"
+            onCreate={(label) => {
+              setPlatformList((l) => (l.includes(label) ? l : [...l, label]));
+              return { value: label, label };
+            }}
+          />
         </Field>
         <Field label="Usuario o ID en la plataforma" error={e.platform_ref} hint="Ej. su apodo de Mercado Libre.">
           <Input name="platform_ref" defaultValue={client?.platform_ref ?? ""} placeholder="Ej. JUANPEREZ2024" />
