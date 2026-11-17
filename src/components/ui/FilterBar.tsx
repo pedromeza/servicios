@@ -7,7 +7,8 @@ import { controlClass } from "./Fields";
 import { Select } from "./Fields";
 import { cn } from "@/lib/cn";
 
-type FilterDef = { name: string; label: string; options: { value: string; label: string }[] };
+/** `allLabel` cambia el texto de la opción vacía (por defecto "Etiqueta: todos"), útil para un selector de orden. */
+type FilterDef = { name: string; label: string; options: { value: string; label: string }[]; allLabel?: string };
 
 export function FilterBar({ placeholder, filters = [] }: { placeholder: string; filters?: FilterDef[] }) {
   const router = useRouter();
@@ -53,7 +54,7 @@ export function FilterBar({ placeholder, filters = [] }: { placeholder: string; 
           onChange={(e) => update(f.name, e.target.value)}
           className="w-auto min-w-[160px]"
         >
-          <option value="">{f.label}: todos</option>
+          <option value="">{f.allLabel ?? `${f.label}: todos`}</option>
           {f.options.map((o) => (
             <option key={o.value} value={o.value}>
               {o.label}

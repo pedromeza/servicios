@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { cancelPaymentLink, createPaymentLink, deleteSale, purgeSale, restoreSale } from "@/lib/actions";
-import { dateInZone, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
+import { dateInZone, daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
+import { renewalTone } from "@/lib/renewal";
 import type { Page } from "@/lib/paging";
 import { SALE_KINDS, type LedgerMonth, type LedgerRow, type Option, type PaymentLink, type Sale } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -138,6 +139,7 @@ export function SalesManager({
           },
           { name: "mes", label: "Mes", options: months.map((m) => ({ value: m.month, label: `${m.label} · ${fmtMoney(m.price)}` })) },
           { name: "plataforma", label: "Plataforma", options: platforms.map((p) => ({ value: p, label: p })) },
+          { name: "orden", label: "Orden", allLabel: "Orden: las que vencen primero", options: [{ value: "venta", label: "Orden: venta más reciente primero" }] },
         ]}
       />
 
@@ -365,7 +367,26 @@ export function SalesManager({
                   return (
                     <tr key={r.key} className="group hover:bg-navy-50/60">
                       <Td className="whitespace-nowrap">{fmtDate(r.date)}</Td>
-                      <Td className="whitespace-nowrap">{r.renews_at ? <span className="font-medium text-navy-900">{fmtDate(r.renews_at)}</span> : <span className="text-slate-400">—</span>}</Td>
+                      <Td className="whitespace-nowrap">
+                        {r.renews_at ? (
+                          <>
+                            <div className="font-medium text-navy-900">{fmtDate(r.renews_at)}</div>
+                            {(() => {
+                              const d = daysUntil(r.renews_at);
+                              // Aviso solo cuando está cerca o recién vencida: hasta 30 días antes y 60 después.
+                              if (d === null || d > 30 || d < -60) return null;
+                              const t = renewalTone(d);
+                              return (
+                                <Badge tone={t.tone} className="mt-1">
+                                  {t.label}
+                                </Badge>
+                              );
+                            })()}
+                          </>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </Td>
                       <Td>
                         {r.client_id ? (
                           <Link href={`/clientes/${r.client_id}`} className="font-medium text-navy-900 hover:underline">

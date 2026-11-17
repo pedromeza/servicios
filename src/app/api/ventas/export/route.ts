@@ -2,7 +2,8 @@ import ExcelJS from "exceljs";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { salesLedger } from "@/lib/data";
-import { filterLedger } from "@/lib/ledger";
+import { todayISO } from "@/lib/format";
+import { filterLedger, sortByRenewal } from "@/lib/ledger";
 import { SALE_KINDS } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,8 @@ export async function GET(req: NextRequest) {
   }
   const sp = req.nextUrl.searchParams;
   const get = (k: string) => sp.get(k) ?? "";
-  const rows = filterLedger(await salesLedger(), { q: get("q"), tipo: get("tipo"), mes: get("mes"), plataforma: get("plataforma") });
+  const matched = filterLedger(await salesLedger(), { q: get("q"), tipo: get("tipo"), mes: get("mes"), plataforma: get("plataforma") });
+  const rows = get("orden") !== "venta" && !get("mes") ? sortByRenewal(matched, todayISO()) : matched;
 
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Ventas");
