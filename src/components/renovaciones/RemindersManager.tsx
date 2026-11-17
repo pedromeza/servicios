@@ -47,6 +47,42 @@ export function RemindersManager({
   const [pending, start] = useTransition();
 
   const withEmail = candidates.filter((c) => c.emails.length > 0);
+  /** Botones de un cliente: WhatsApp, correo y link de pago. Nunca parten su texto en varias líneas. */
+  const rowActions = (c: ReminderCandidate) => (
+    <>
+      {waFor(c) ? (
+        <a
+          href={waFor(c)!}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Abrir WhatsApp con el mensaje escrito"
+          className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-[#25D366] px-2.5 text-xs font-medium text-white hover:bg-[#1ebe5d]"
+        >
+          <MessageCircle size={13} /> WhatsApp
+        </a>
+      ) : (
+        <span
+          title="Sin teléfono: agrega el número en el contacto del cliente"
+          className="inline-flex h-8 shrink-0 cursor-not-allowed items-center gap-1 whitespace-nowrap rounded-lg bg-slate-100 px-2.5 text-xs text-slate-400"
+        >
+          <MessageCircle size={13} /> WhatsApp
+        </span>
+      )}
+      <Button size="sm" variant="secondary" className="shrink-0" disabled={c.emails.length === 0 || !resendReady || pending} onClick={() => setConfirm([c.subscription_id])}>
+        <Send size={13} /> Correo
+      </Button>
+      {mpReady && (
+        <PayLinkButton
+          subscriptionId={c.subscription_id}
+          renewal={{ price: c.price, currency: c.currency, plan: c.plan, products: c.products, provider: c.provider, purchased_at: c.purchased_at, renews_at: c.renews_at }}
+          phone={c.phone}
+          label="Link"
+          className="shrink-0"
+          waIntro={`Hola ${c.client_name}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(c.plan, c.products, c.provider)}`}
+        />
+      )}
+    </>
+  );
   const waFor = (c: ReminderCandidate) => {
     if (!c.phone) return null;
     const vars: ReminderVars = {
@@ -114,13 +150,15 @@ export function RemindersManager({
           description="Suscripciones activas por vencer. Marca a quién avisar y envía el correo con la plantilla guardada."
           action={
             <div className="flex flex-wrap items-center gap-2">
-              <Select value={String(days)} onChange={(ev) => setDays(ev.target.value)} className="w-auto" aria-label="Ventana de días">
+              <div className="w-full sm:w-44">
+              <Select value={String(days)} onChange={(ev) => setDays(ev.target.value)} aria-label="Ventana de días">
                 {[7, 15, 30, 45, 60, 90].map((d) => (
                   <option key={d} value={d}>
                     Próximos {d} días
                   </option>
                 ))}
               </Select>
+              </div>
               <Button
                 variant="secondary"
                 size="sm"
@@ -156,115 +194,138 @@ export function RemindersManager({
         {candidates.length === 0 ? (
           <EmptyState icon={<BellRing size={24} />} title="Nada por vencer" description={`Ninguna suscripción activa vence en los próximos ${days} días.`} />
         ) : (
-          <Table>
-            <thead className="border-b border-navy-100">
-              <tr>
-                <Th className="w-8" />
-                <Th>Cliente</Th>
-                <Th>Correo</Th>
-                <Th>Programas</Th>
-                <Th>Compra</Th>
-                <Th>Vence</Th>
-                <Th className="text-right">Precio</Th>
-                <Th>Último aviso</Th>
-                <Th className="w-44" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-navy-100">
+          <>
+            {/* Teléfono: una tarjeta por cliente, sin desplazamiento lateral. */}
+            <ul className="divide-y divide-navy-100 md:hidden">
               {candidates.map((c) => {
                 const t = renewalTone(c.days);
                 return (
-                  <tr key={c.subscription_id} className={`hover:bg-navy-50/60 ${selected.has(c.subscription_id) ? "bg-brand-light/40" : ""}`}>
-                    <Td>
+                  <li key={c.subscription_id} className={`px-4 py-3 ${selected.has(c.subscription_id) ? "bg-brand-light/40" : ""}`}>
+                    <div className="flex items-start gap-3">
                       <input
                         type="checkbox"
-                        className="accent-brand"
+                        className="mt-1 accent-brand"
                         aria-label={`Seleccionar ${c.client_name}`}
                         disabled={c.emails.length === 0}
                         checked={selected.has(c.subscription_id)}
                         onChange={() => toggle(c.subscription_id)}
                       />
-                    </Td>
-                    <Td>
-                      <div className="font-medium text-navy-900">{c.client_name}</div>
-                      {c.platform && <div className="text-xs text-slate-400">{c.platform}</div>}
-                    </Td>
-                    <Td>
-                      {c.emails.length > 0 ? (
-                        <div className="space-y-0.5">
-                          {c.emails.map((e) => (
-                            <span key={e} className="flex items-center gap-1 break-all text-slate-700">
-                              <Mail size={13} className="shrink-0 text-slate-400" /> {e}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="flex items-center gap-1 text-xs text-red-600">
-                          <MailX size={13} /> Sin correo
-                        </span>
-                      )}
-                    </Td>
-                    <Td className="max-w-[200px] text-slate-800">
-                      <span title={c.products.join(", ")}>{productsText(c.plan, c.products, c.provider)}</span>
-                    </Td>
-                    <Td className="whitespace-nowrap">{fmtDate(c.purchased_at)}</Td>
-                    <Td>
-                      <div className="whitespace-nowrap text-slate-800">{fmtDate(c.renews_at)}</div>
-                      <Badge tone={t.tone} className="mt-1">
-                        {t.label}
-                      </Badge>
-                    </Td>
-                    <Td className="whitespace-nowrap text-right font-medium text-navy-900">{fmtMoney(c.price, c.currency)}</Td>
-                    <Td className="whitespace-nowrap text-xs text-slate-500">
-                      {c.last_reminder_at ? (
-                        <>
-                          {fmtDateTime(c.last_reminder_at)}
-                          <div className="text-slate-400">
-                            {c.reminders_sent} enviado{c.reminders_sent === 1 ? "" : "s"}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="font-medium text-navy-900">{c.client_name}</div>
+                            <div className="text-xs text-slate-500" title={c.products.join(", ")}>
+                              {productsText(c.plan, c.products, c.provider)}
+                              {c.platform ? ` · ${c.platform}` : ""}
+                            </div>
                           </div>
-                        </>
-                      ) : (
-                        <span className="text-slate-400">Nunca</span>
-                      )}
-                    </Td>
-                    <Td>
-                      <div className="flex justify-end gap-1">
-                        {waFor(c) ? (
-                          <a
-                            href={waFor(c)!}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="Abrir WhatsApp con el mensaje escrito"
-                            className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#25D366] px-2.5 text-xs font-medium text-white hover:bg-[#1ebe5d]"
-                          >
-                            <MessageCircle size={13} /> WhatsApp
-                          </a>
-                        ) : (
-                          <span
-                            title="Sin teléfono: agrega el número en el contacto del cliente"
-                            className="inline-flex h-8 cursor-not-allowed items-center gap-1 rounded-lg bg-slate-100 px-2.5 text-xs text-slate-400"
-                          >
-                            <MessageCircle size={13} /> WhatsApp
-                          </span>
-                        )}
-                        <Button size="sm" variant="secondary" disabled={c.emails.length === 0 || !resendReady || pending} onClick={() => setConfirm([c.subscription_id])}>
-                          <Send size={13} /> Correo
-                        </Button>
-                        {mpReady && (
-                          <PayLinkButton
-                            subscriptionId={c.subscription_id}
-                            renewal={{ price: c.price, currency: c.currency, plan: c.plan, products: c.products, provider: c.provider, purchased_at: c.purchased_at, renews_at: c.renews_at }}
-                            phone={c.phone}
-                            waIntro={`Hola ${c.client_name}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(c.plan, c.products, c.provider)}`}
-                          />
-                        )}
+                          <div className="shrink-0 text-right">
+                            <div className="font-semibold text-navy-900">{fmtMoney(c.price, c.currency)}</div>
+                            <Badge tone={t.tone} className="mt-0.5">
+                              {t.label}
+                            </Badge>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 space-y-0.5 text-xs text-slate-600">
+                          <div>
+                            Vence <span className="font-medium text-navy-900">{fmtDate(c.renews_at)}</span> · compra {fmtDate(c.purchased_at)}
+                          </div>
+                          {c.emails.length > 0 ? (
+                            c.emails.map((e) => (
+                              <div key={e} className="flex items-center gap-1 break-all">
+                                <Mail size={12} className="shrink-0 text-slate-400" /> {e}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="flex items-center gap-1 text-red-600">
+                              <MailX size={12} /> Sin correo
+                            </div>
+                          )}
+                          <div className="text-slate-400">{c.last_reminder_at ? `Último aviso ${fmtDateTime(c.last_reminder_at)} · ${c.reminders_sent} enviado${c.reminders_sent === 1 ? "" : "s"}` : "Sin avisos enviados"}</div>
+                        </div>
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">{rowActions(c)}</div>
                       </div>
-                    </Td>
-                  </tr>
+                    </div>
+                  </li>
                 );
               })}
-            </tbody>
-          </Table>
+            </ul>
+
+            {/* Pantallas medianas y grandes: tabla. */}
+            <Table className="hidden md:block">
+              <thead className="border-b border-navy-100">
+                <tr>
+                  <Th className="w-8" />
+                  <Th>Cliente</Th>
+                  <Th>Programas</Th>
+                  <Th>Vence</Th>
+                  <Th className="text-right">Precio</Th>
+                  <Th>Último aviso</Th>
+                  <Th />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy-100">
+                {candidates.map((c) => {
+                  const t = renewalTone(c.days);
+                  return (
+                    <tr key={c.subscription_id} className={`hover:bg-navy-50/60 ${selected.has(c.subscription_id) ? "bg-brand-light/40" : ""}`}>
+                      <Td>
+                        <input
+                          type="checkbox"
+                          className="accent-brand"
+                          aria-label={`Seleccionar ${c.client_name}`}
+                          disabled={c.emails.length === 0}
+                          checked={selected.has(c.subscription_id)}
+                          onChange={() => toggle(c.subscription_id)}
+                        />
+                      </Td>
+                      <Td>
+                        <div className="font-medium text-navy-900">{c.client_name}</div>
+                        {c.emails.length > 0 ? (
+                          c.emails.map((e) => (
+                            <div key={e} className="flex items-center gap-1 text-xs text-slate-500">
+                              <Mail size={12} className="shrink-0 text-slate-400" /> <span className="break-all">{e}</span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="flex items-center gap-1 text-xs text-red-600">
+                            <MailX size={12} /> Sin correo
+                          </div>
+                        )}
+                        {c.platform && <div className="text-xs text-slate-400">{c.platform}</div>}
+                      </Td>
+                      <Td className="max-w-[220px] text-slate-800">
+                        <span title={c.products.join(", ")}>{productsText(c.plan, c.products, c.provider)}</span>
+                      </Td>
+                      <Td>
+                        <div className="whitespace-nowrap text-slate-800">{fmtDate(c.renews_at)}</div>
+                        <div className="whitespace-nowrap text-xs text-slate-400">compra {fmtDate(c.purchased_at)}</div>
+                        <Badge tone={t.tone} className="mt-1">
+                          {t.label}
+                        </Badge>
+                      </Td>
+                      <Td className="whitespace-nowrap text-right font-medium text-navy-900">{fmtMoney(c.price, c.currency)}</Td>
+                      <Td className="whitespace-nowrap text-xs text-slate-500">
+                        {c.last_reminder_at ? (
+                          <>
+                            {fmtDateTime(c.last_reminder_at)}
+                            <div className="text-slate-400">
+                              {c.reminders_sent} enviado{c.reminders_sent === 1 ? "" : "s"}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="text-slate-400">Nunca</span>
+                        )}
+                      </Td>
+                      <Td>
+                        <div className="flex flex-wrap justify-end gap-1.5">{rowActions(c)}</div>
+                      </Td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </Table>
+          </>
         )}
       </Card>
 

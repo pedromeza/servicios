@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, CreditCard, Download, ExternalLink, MessageCircle, Pencil, Plus, ShoppingCart, Trash2, Undo2, X } from "lucide-react";
+import { Check, ChevronDown, Copy, CreditCard, Download, ExternalLink, MessageCircle, Pencil, Plus, ShoppingCart, Trash2, Undo2, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
@@ -139,14 +139,25 @@ export function SalesManager({
           },
           { name: "mes", label: "Mes", options: months.map((m) => ({ value: m.month, label: `${m.label} · ${fmtMoney(m.price)}` })) },
           { name: "plataforma", label: "Plataforma", options: platforms.map((p) => ({ value: p, label: p })) },
-          { name: "orden", label: "Orden", allLabel: "Orden: las que vencen primero", options: [{ value: "venta", label: "Orden: venta más reciente primero" }] },
         ]}
       />
 
       {!inTrash && months.length > 0 && !params.get("mes") && (
-        <Card className="mb-4">
-          <CardHeader title="Por mes" description="Cobrado, costo y ganancia de todo lo vendido. Pulsa un mes para ver solo sus ventas." />
-          <div className="grid gap-px bg-navy-100 sm:grid-cols-3 lg:grid-cols-6">
+        <Card className="mb-4 overflow-hidden">
+          {/* Oculto por defecto: el resumen del mes ya está en el Panel. Se abre al pulsar el encabezado. */}
+          <details className="group">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-3 text-sm hover:bg-navy-50/60 [&::-webkit-details-marker]:hidden">
+              <span>
+                <span className="font-semibold text-navy-900">Por mes</span>
+                <span className="ml-2 text-slate-500">Cobrado, costo y ganancia de cada mes</span>
+              </span>
+              <span className="flex items-center gap-1 text-xs font-medium text-navy-700">
+                <span className="group-open:hidden">Mostrar</span>
+                <span className="hidden group-open:inline">Ocultar</span>
+                <ChevronDown size={15} className="transition-transform group-open:rotate-180" />
+              </span>
+            </summary>
+          <div className="grid gap-px border-t border-navy-100 bg-navy-100 sm:grid-cols-3 lg:grid-cols-6">
             {months.slice(0, 12).map((m) => (
               <Link key={m.month} href={`/ventas?mes=${m.month}`} className="bg-white px-4 py-3 text-sm hover:bg-navy-50/60">
                 <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">{m.label}</div>
@@ -157,6 +168,7 @@ export function SalesManager({
               </Link>
             ))}
           </div>
+          </details>
         </Card>
       )}
 
@@ -176,7 +188,7 @@ export function SalesManager({
                     {l.status === "refunded" ? ` · pagado ${l.paid_at ? fmtDateTime(l.paid_at) : ""} · devuelto ${l.refunded_at ? fmtDateTime(l.refunded_at) : ""}` : l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : l.status === "pending" ? ` · ${isExpired(l) ? "venció" : "vence"} ${fmtDate(dateInZone(expiresAt(l)))}` : ""}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="whitespace-nowrap font-semibold text-navy-900">{fmtMoney(l.amount, l.currency)}</span>
                   <Badge tone={l.status === "paid" ? "success" : l.status === "refunded" ? "danger" : isExpired(l) ? "neutral" : l.status === "pending" ? "warning" : "neutral"}>
                     {l.status === "paid" ? "Pagado" : l.status === "refunded" ? "Reembolsado" : isExpired(l) ? "Vencido" : l.status === "pending" ? "Pendiente" : "Cancelado"}

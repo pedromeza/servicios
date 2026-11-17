@@ -47,20 +47,17 @@ export function FilterBar({ placeholder, filters = [] }: { placeholder: string; 
         />
       </div>
       {filters.map((f) => (
-        <Select
-          key={f.name}
-          aria-label={f.label}
-          value={params.get(f.name) ?? ""}
-          onChange={(e) => update(f.name, e.target.value)}
-          className="w-auto min-w-[160px]"
-        >
-          <option value="">{f.allLabel ?? `${f.label}: todos`}</option>
-          {f.options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </Select>
+        // El ancho lo da el contenedor: en pantallas anchas los filtros quedan en la misma fila que la búsqueda.
+        <div key={f.name} className="w-full sm:w-52">
+          <Select aria-label={f.label} value={params.get(f.name) ?? ""} onChange={(e) => update(f.name, e.target.value)}>
+            <option value="">{f.allLabel ?? `${f.label}: todos`}</option>
+            {f.options.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </Select>
+        </div>
       ))}
       {hasFilters && (
         <button
