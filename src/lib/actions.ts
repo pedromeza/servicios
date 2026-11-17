@@ -756,7 +756,7 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
 // ---------------------------------------------------------------- Importar Mercado Libre
 export type MlPreviewRow = MlSale & { imported: boolean; client_exists: boolean };
 export type MlPreviewState =
-  | { ok: true; rows: MlPreviewRow[]; sheet: string; accounts: { value: string; label: string }[]; migrationPending: boolean }
+  | { ok: true; rows: MlPreviewRow[]; sheet: string; format: "ml" | "simple"; accounts: { value: string; label: string }[]; migrationPending: boolean }
   | { ok: false; error: string }
   | null;
 
@@ -771,7 +771,7 @@ export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Prom
   try {
     const { supabase } = await requireUser();
     const buf = await readUpload(fd);
-    const { sales, sheet } = await parseMlWorkbook(buf);
+    const { sales, sheet, format } = await parseMlWorkbook(buf);
     const [existing, clients, accounts] = await Promise.all([
       supabase.from("subscriptions").select("ml_sale_id").not("ml_sale_id", "is", null),
       supabase.from("clients").select("name"),
@@ -780,11 +780,12 @@ export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Prom
     const migrationPending = Boolean(existing.error && /ml_sale_id|schema cache/i.test(existing.error.message));
     const imported = new Set(((existing.data ?? []) as { ml_sale_id: string }[]).map((r) => r.ml_sale_id));
     const names = new Set(((clients.data ?? []) as { name: string }[]).map((c) => normalizeName(c.name)));
-    const rows: MlPreviewRow[] = sales.map((s) => ({ ...s, imported: imported.has(s.sale_id), client_exists: names.has(normalizeName(s.buyer)) }));
+    const rows: MlPreviewRow[] = sales.map((s) => ({ ...s, imported: Boolean(s.sale_id) && imported.has(s.sale_id), client_exists: names.has(normalizeName(s.buyer)) }));
     return {
       ok: true,
       rows,
       sheet,
+      format,
       migrationPending,
       accounts: ((accounts.data ?? []) as { id: string; provider: string; label: string; username_enc: string | null }[]).map((a) => ({
         value: a.id,
@@ -799,13 +800,16 @@ export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Prom
 export type MlImportResult = { ok: boolean; error?: string; created: number; clients_created: number; skipped_imported: number; skipped_invalid: number; account_label?: string };
 
 const mlRowSchema = z.object({
-  sale_id: z.string().regex(/^\d{6,}$/),
+  sale_id: z.string().regex(/^\d{6,}$/).or(z.literal("")),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   ok: z.boolean(),
   buyer: z.string().min(1).max(200),
   title: z.string().max(300),
   products: z.array(z.string().min(1).max(80)).min(1),
-  years: z.number().int().min(1).max(3).nullable(),
+  months: z.number().int().min(0).max(120).nullable(),
+  renews_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  emails: z.string().max(2000),
+  extra: z.string().max(1000),
   units: z.number().int().min(1).max(100),
   unit_price: z.number().min(0),
   gross: z.number(),
@@ -867,7 +871,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
       result.skipped_invalid += 1;
       continue;
     }
-    if (imported.has(r.sale_id)) {
+    if (r.sale_id && imported.has(r.sale_id)) {
       result.skipped_imported += 1;
       continue;
     }
@@ -884,14 +888,16 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
       clientByName.set(normalizeName(r.buyer), clientId!);
       result.clients_created += 1;
     }
-    const years = r.years ?? 1;
+    const months = r.months ?? 12;
     const purchased = r.date ?? today;
-    const renews = addYearsISO(purchased, years);
+    const renews = r.renews_at ?? (months > 0 ? addMonthsISO(purchased, months) : null);
+    const emails = splitEmails(r.emails);
     const notes = [
-      `Mercado Libre #${r.sale_id}`,
+      r.sale_id ? `Mercado Libre #${r.sale_id}` : "Importada de hoja de captura",
       r.title,
-      `Cobrado ${r.gross.toFixed(2)} · comisión ML ${r.fee.toFixed(2)} · neto ${r.net.toFixed(2)}`,
-      r.years ? "" : "Vigencia no indicada en el título: se asumió 1 año.",
+      r.gross || r.fee ? `Cobrado ${r.gross.toFixed(2)} · comisión ML ${r.fee.toFixed(2)} · neto ${r.net.toFixed(2)}` : "",
+      r.months === null ? "Vigencia no indicada: se asumió 1 año." : "",
+      r.extra,
     ]
       .filter(Boolean)
       .join("\n");
@@ -900,15 +906,16 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
       client_id: clientId,
       plan: "individual",
       products: r.products,
-      seats: r.units,
       purchased_at: purchased,
       cost: 0,
       price: Math.round(r.unit_price * r.units * 100) / 100,
       currency: "MXN",
       renews_at: renews,
-      status: renews >= today ? "active" : "expired",
+      status: !renews || renews >= today ? "active" : "expired",
       notes_enc: encrypt(notes),
-      ml_sale_id: r.sale_id,
+      email_enc: encrypt(emails.join(", ")),
+      seats: Math.max(r.units, emails.length),
+      ml_sale_id: r.sale_id || null,
     });
     if (ins.error) return { ...result, ok: false, error: `Venta #${r.sale_id}: ${ins.error.message}` };
     imported.add(r.sale_id);

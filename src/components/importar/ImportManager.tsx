@@ -3,7 +3,8 @@
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Upload } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
 import { commitMlImport, previewMlImport, type MlImportResult, type MlPreviewState } from "@/lib/actions";
-import { fmtDate, fmtMoney } from "@/lib/format";
+import { addMonthsISO, fmtDate, fmtMoney } from "@/lib/format";
+import { termLabel } from "@/lib/terms";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, PageHeader, Table, Td, Th } from "@/components/ui/Card";
@@ -23,7 +24,8 @@ export function ImportManager() {
       toCreate: valid.filter((r) => !r.imported).length,
       imported: valid.filter((r) => r.imported).length,
       invalid: rows.length - valid.length,
-      noYears: valid.filter((r) => !r.years && !r.imported).length,
+      noYears: valid.filter((r) => r.months === null && !r.imported).length,
+      noSaleId: valid.filter((r) => !r.sale_id && !r.imported).length,
       newClients: new Set(valid.filter((r) => !r.imported && !r.client_exists).map((r) => r.buyer.toLowerCase())).size,
       amount: valid.filter((r) => !r.imported).reduce((n, r) => n + r.unit_price * r.units, 0),
     };
@@ -31,12 +33,15 @@ export function ImportManager() {
 
   return (
     <>
-      <PageHeader title="Importar ventas de Mercado Libre" description="Sube el reporte de Ventas (.xlsx) y crea clientes y suscripciones de golpe, sin duplicar lo ya importado." />
+      <PageHeader
+        title="Importar ventas"
+        description="Sube el reporte de Ventas de Mercado Libre o la hoja de captura (Cliente, Programas, Correo, Vigencia, Fecha de compra, Precio…). Verás cómo quedaría cada venta antes de guardar nada."
+      />
 
       <Card className="mb-6">
         <CardHeader
           title="1. Elige el archivo"
-          description="En Mercado Libre: Ventas → Descargar reporte → Ventas (Excel). El archivo se llama algo como “Ventas_MX_Mercado_Libre…xlsx”."
+          description="Acepta el reporte de Mercado Libre (Ventas → Descargar reporte → Ventas) o una hoja .xlsx con encabezados Cliente, Programas, Correo, Vigencia, Fecha de compra, Precio unitario, Puestos, Adicional y Fecha de renovación. Los demás encabezados se ignoran."
         />
         <form action={analyze} className="flex flex-wrap items-end gap-3 px-5 py-4">
           <label className="flex min-w-[260px] flex-1 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-navy-200 bg-navy-50 px-4 py-3 text-sm text-slate-600 hover:bg-navy-100/60">
@@ -57,7 +62,7 @@ export function ImportManager() {
         <Card className="mb-6">
           <CardHeader
             title="2. Revisa y confirma"
-            description={`${stats.total} ventas en la hoja “${preview.sheet}” · ${stats.toCreate} por importar · ${stats.imported} ya importadas · ${stats.invalid} canceladas o reembolsadas (se omiten)`}
+            description={`${preview.format === "ml" ? "Reporte de Mercado Libre" : "Hoja de captura"} · ${stats.total} ventas en “${preview.sheet}” · ${stats.toCreate} por importar · ${stats.imported} ya importadas · ${stats.invalid} canceladas o reembolsadas (se omiten)`}
           />
           <form action={commit} className="space-y-4 px-5 py-4">
             <input type="hidden" name="rows" value={JSON.stringify(rows)} />
@@ -83,8 +88,9 @@ export function ImportManager() {
                   {stats.newClients === 1 ? "" : "s"} nuevo{stats.newClients === 1 ? "" : "s"} (los demás ya existen y se reutilizan).
                 </p>
                 <p className="mt-1">
-                  Precio = precio unitario × unidades. Comisión y neto quedan en las notas. Renovación = compra + vigencia del título
+                  Precio = precio unitario × puestos. Los correos de la columna Correo quedan en la suscripción. Renovación = la de la hoja o compra + vigencia
                   {stats.noYears > 0 ? ` (${stats.noYears} sin vigencia: se asume 1 año)` : ""}. Las que ya vencieron entran como vencidas.
+                  {stats.noSaleId > 0 ? ` ${stats.noSaleId} sin # de venta: no se puede detectar si ya estaban; revisa que no se dupliquen.` : ""}
                 </p>
               </div>
             </div>
@@ -116,6 +122,7 @@ export function ImportManager() {
                 <Th>Fecha</Th>
                 <Th>Comprador</Th>
                 <Th>Programas</Th>
+                <Th>Correo</Th>
                 <Th>Vigencia</Th>
                 <Th>Renueva</Th>
                 <Th className="text-right">Precio</Th>
@@ -128,7 +135,11 @@ export function ImportManager() {
                   <Td className="whitespace-nowrap">{fmtDate(r.date)}</Td>
                   <Td>
                     <div className={r.ok && !r.imported ? "font-medium text-navy-900" : ""}>{r.buyer}</div>
-                    <div className="text-xs text-slate-400">#{r.sale_id}{r.client_exists ? " · cliente existente" : ""}</div>
+                    <div className="text-xs text-slate-400">
+                      {r.sale_id ? `#${r.sale_id}` : "sin # de venta"}
+                      {r.client_exists ? " · cliente existente" : ""}
+                      {r.extra ? ` · ${r.extra}` : ""}
+                    </div>
                   </Td>
                   <Td>
                     <div>{r.products.join(", ")}</div>
@@ -136,8 +147,9 @@ export function ImportManager() {
                       {r.title}
                     </div>
                   </Td>
-                  <Td className="whitespace-nowrap">{r.years ? `${r.years} año${r.years === 1 ? "" : "s"}` : <span className="text-amber-700">no dice → 1 año</span>}</Td>
-                  <Td className="whitespace-nowrap">{r.date ? fmtDate(addYears(r.date, r.years ?? 1)) : "—"}</Td>
+                  <Td className="max-w-[200px] break-all text-xs text-slate-600">{r.emails || <span className="text-slate-400">—</span>}</Td>
+                  <Td className="whitespace-nowrap">{r.months !== null ? termLabel(r.months) : <span className="text-amber-700">no dice → 1 año</span>}</Td>
+                  <Td className="whitespace-nowrap">{r.renews_at ? fmtDate(r.renews_at) : r.date && (r.months ?? 12) > 0 ? fmtDate(addMonthsISO(r.date, r.months ?? 12)) : "—"}</Td>
                   <Td className="whitespace-nowrap text-right">{fmtMoney(r.unit_price * r.units)}{r.units > 1 ? ` (${r.units} u.)` : ""}</Td>
                   <Td>
                     {!r.ok ? <Badge tone="danger">{r.status}</Badge> : r.imported ? <Badge>Ya importada</Badge> : <Badge tone="success">Se importará</Badge>}
@@ -152,8 +164,3 @@ export function ImportManager() {
   );
 }
 
-function addYears(iso: string, years: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const date = new Date(y + years, m - 1, d);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}

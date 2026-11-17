@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 
 /** Una venta del reporte "Ventas" de Mercado Libre, ya interpretada. */
 export type MlSale = {
-  sale_id: string;
+  sale_id: string; // "# de venta" de Mercado Libre; vacío si la hoja no lo trae
   date: string | null; // YYYY-MM-DD
   status: string;
   ok: boolean; // entregada o concretada (no cancelada ni reembolsada)
@@ -11,7 +11,10 @@ export type MlSale = {
   title: string;
   sku: string;
   products: string[];
-  years: number | null; // vigencia leída del título
+  months: number | null; // vigencia en meses leída del título o de la columna Vigencia
+  renews_at: string | null; // fecha de renovación si la hoja la trae (manda sobre el cálculo)
+  emails: string; // correos separados por coma (hoja editada)
+  extra: string; // columna "Adicional" / notas (hoja editada)
   units: number;
   unit_price: number;
   gross: number; // ingresos por productos
@@ -51,10 +54,34 @@ export function parseMlDate(s: string): string | null {
   return `${m[3]}-${String(month).padStart(2, "0")}-${String(Number(m[1])).padStart(2, "0")}`;
 }
 
-/** Vigencia en años leída del título: "(1 Año)", "2 Años", "3 Años". */
-export function parseYears(title: string): number | null {
-  const m = title.match(/(\d)\s*a[ñn]os?/i);
-  return m ? Number(m[1]) : null;
+/** Vigencia en meses leída de un texto: "(1 Año)", "2 Años", "18 meses", "Permanente" (0). */
+export function parseMonths(text: string): number | null {
+  const t = text.toLowerCase();
+  if (/permanente|perpetu/.test(t)) return 0;
+  const y = t.match(/(\d{1,2})\s*a[ñn]os?/);
+  if (y) return Number(y[1]) * 12;
+  const m = t.match(/(\d{1,3})\s*mes/);
+  if (m) return Number(m[1]);
+  return null;
+}
+
+/** Fechas en formatos comunes de hoja: "13/11/2026", "2026-11-13", "13 nov 2026", Date de Excel o texto de ML. */
+export function parseAnyDate(v: ExcelJS.CellValue): string | null {
+  if (v instanceof Date) return `${v.getUTCFullYear()}-${String(v.getUTCMonth() + 1).padStart(2, "0")}-${String(v.getUTCDate()).padStart(2, "0")}`;
+  const s = cellText(v);
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = s.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  const ml = parseMlDate(s);
+  if (ml) return ml;
+  const short = s.match(/^(\d{1,2})\s+(\p{L}{3})\w*\.?\s+(\d{4})/u);
+  if (short) {
+    const key = Object.keys(MESES).find((k) => k.startsWith(short[2].toLowerCase()));
+    if (key) return `${short[3]}-${String(MESES[key]).padStart(2, "0")}-${short[1].padStart(2, "0")}`;
+  }
+  return null;
 }
 
 /** Programas deducidos del título. */
@@ -84,63 +111,147 @@ export function parseProducts(title: string): string[] {
 
 const OK_STATUS = /entregad|concretad|en camino|listo para|pendiente de env|enviado/i;
 
-/** Lee el Excel de ventas de Mercado Libre y devuelve una venta por fila. */
-export async function parseMlWorkbook(buffer: ArrayBuffer): Promise<{ sales: MlSale[]; sheet: string }> {
+/** Busca una columna por varios nombres posibles (sin acentos ni mayúsculas, por prefijo). */
+function findCol(headers: Map<string, number>, ...names: string[]): number | undefined {
+  const norm = (s: string) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const entries = [...headers.entries()].map(([h, c]) => [norm(h), c] as const);
+  for (const n of names.map(norm)) {
+    const hit = entries.find(([h]) => h === n) ?? entries.find(([h]) => h.startsWith(n));
+    if (hit) return hit[1];
+  }
+  return undefined;
+}
+
+/**
+ * Lee un Excel de ventas y devuelve una venta por fila. Acepta dos formatos:
+ * 1) el reporte de Ventas de Mercado Libre (encabezado "# de venta"), y
+ * 2) la hoja simplificada de captura (encabezados Cliente, Programas, Fecha de compra…), que puede
+ *    traer además Correo, Vigencia, Adicional, Fecha de renovación y Puestos.
+ */
+export async function parseMlWorkbook(buffer: ArrayBuffer): Promise<{ sales: MlSale[]; sheet: string; format: "ml" | "simple" }> {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
-  const ws = wb.getWorksheet("Ventas MX") ?? wb.worksheets[0];
+  const ws = wb.getWorksheet("Ventas MX") ?? wb.worksheets.find((w) => /ventas/i.test(w.name)) ?? wb.worksheets[0];
   if (!ws) throw new Error("El archivo no tiene hojas.");
 
-  // Fila de encabezados: la que contiene "# de venta".
+  // Fila de encabezados: la primera que contenga "# de venta" (reporte ML) o "Cliente" + "Programas"/"Producto" (hoja simple).
   let headerRow = 0;
+  let format: "ml" | "simple" = "ml";
   const headers = new Map<string, number>();
   ws.eachRow((row, n) => {
     if (headerRow) return;
-    row.eachCell((cell, col) => {
+    headers.clear();
+    row.eachCell((cell, c) => {
       const t = cellText(cell.value);
-      if (t && !headers.has(t)) headers.set(t, col);
+      if (t && !headers.has(t)) headers.set(t, c);
     });
-    if (headers.has("# de venta")) headerRow = n;
-    else headers.clear();
+    if (headers.has("# de venta")) {
+      headerRow = n;
+      format = "ml";
+    } else if (findCol(headers, "Cliente", "Comprador") && findCol(headers, "Programas", "Producto", "Programa")) {
+      headerRow = n;
+      format = "simple";
+    }
   });
-  if (!headerRow) throw new Error("No encontré la fila de encabezados con “# de venta”. ¿Es el reporte de Ventas de Mercado Libre?");
-
-  const col = (name: string) => headers.get(name);
-  const need = ["# de venta", "Fecha de venta", "Estado", "Título de la publicación"];
-  for (const n of need) if (!col(n)) throw new Error(`Falta la columna “${n}” en el reporte.`);
+  if (!headerRow) throw new Error("No reconocí los encabezados. Sube el reporte de Ventas de Mercado Libre o la hoja de captura con columnas Cliente, Programas y Fecha de compra.");
 
   const sales: MlSale[] = [];
-  ws.eachRow((row, n) => {
-    if (n <= headerRow) return;
-    const get = (name: string) => (col(name) ? row.getCell(col(name)!).value : null);
-    const sale_id = cellText(get("# de venta"));
-    if (!sale_id || !/^\d{6,}$/.test(sale_id)) return;
-    const title = cellText(get("Título de la publicación"));
-    const status = cellText(get("Estado"));
-    const buyerRaw = cellText(get("Comprador")) || cellText(get("Datos personales o de empresa"));
-    const buyer = !buyerRaw || /^p[uú]blico general$/i.test(buyerRaw) ? `Público general · #${sale_id}` : buyerRaw;
-    const address = cellText(get("Dirección"));
-    const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
-    const city = parts.length >= 3 ? parts.slice(-3, -1).join(", ") : parts.slice(0, 2).join(", ");
-    const units = Math.max(1, Math.round(num(get("Unidades")) || 1));
-    sales.push({
-      sale_id,
-      date: parseMlDate(cellText(get("Fecha de venta"))),
-      status,
-      ok: OK_STATUS.test(status) && !/cancel|reembols|devoluci/i.test(status),
-      buyer,
-      title,
-      sku: cellText(get("SKU")),
-      products: parseProducts(`${title} ${cellText(get("SKU"))}`),
-      years: parseYears(title),
-      units,
-      unit_price: num(get("Precio unitario de venta de la publicación (MXN)")) || num(get("Ingresos por productos (MXN)")) / units,
-      gross: num(get("Ingresos por productos (MXN)")),
-      fee: Math.abs(num(get("Cargo por venta e impuestos (MXN)"))),
-      net: num(get("Total (MXN)")),
-      city,
+
+  if (format === "ml") {
+    const col = (name: string) => headers.get(name);
+    const need = ["# de venta", "Fecha de venta", "Estado", "Título de la publicación"];
+    for (const n of need) if (!col(n)) throw new Error(`Falta la columna “${n}” en el reporte.`);
+    ws.eachRow((row, n) => {
+      if (n <= headerRow) return;
+      const get = (name: string) => (col(name) ? row.getCell(col(name)!).value : null);
+      const sale_id = cellText(get("# de venta"));
+      if (!sale_id || !/^\d{6,}$/.test(sale_id)) return;
+      const title = cellText(get("Título de la publicación"));
+      const status = cellText(get("Estado"));
+      const buyerRaw = cellText(get("Comprador")) || cellText(get("Datos personales o de empresa"));
+      const buyer = !buyerRaw || /^p[uú]blico general$/i.test(buyerRaw) ? `Público general · #${sale_id}` : buyerRaw;
+      const address = cellText(get("Dirección"));
+      const parts = address.split(",").map((p) => p.trim()).filter(Boolean);
+      const city = parts.length >= 3 ? parts.slice(-3, -1).join(", ") : parts.slice(0, 2).join(", ");
+      const units = Math.max(1, Math.round(num(get("Unidades")) || 1));
+      sales.push({
+        sale_id,
+        date: parseMlDate(cellText(get("Fecha de venta"))),
+        status,
+        ok: OK_STATUS.test(status) && !/cancel|reembols|devoluci/i.test(status),
+        buyer,
+        title,
+        sku: cellText(get("SKU")),
+        products: parseProducts(`${title} ${cellText(get("SKU"))}`),
+        months: parseMonths(title),
+        renews_at: null,
+        emails: "",
+        extra: "",
+        units,
+        unit_price: num(get("Precio unitario de venta de la publicación (MXN)")) || num(get("Ingresos por productos (MXN)")) / units,
+        gross: num(get("Ingresos por productos (MXN)")),
+        fee: Math.abs(num(get("Cargo por venta e impuestos (MXN)"))),
+        net: num(get("Total (MXN)")),
+        city,
+      });
     });
-  });
+  } else {
+    const c = {
+      date: findCol(headers, "Fecha de compra", "Fecha de venta", "Fecha"),
+      sale: findCol(headers, "# venta Mercado Libre", "# de venta", "Venta Mercado Libre", "# venta"),
+      client: findCol(headers, "Cliente", "Comprador"),
+      products: findCol(headers, "Programas", "Producto", "Programa"),
+      email: findCol(headers, "Correo", "Correos", "Email"),
+      term: findCol(headers, "Vigencia"),
+      extra: findCol(headers, "Adicional", "Notas", "Nota"),
+      renews: findCol(headers, "Fecha de renovación", "Renueva", "Renovación"),
+      units: findCol(headers, "Puestos", "Unidades"),
+      price: findCol(headers, "Precio unitario", "Precio", "Monto"),
+      gross: findCol(headers, "Cobrado bruto", "Bruto"),
+      fee: findCol(headers, "Comisión ML", "Comisión"),
+      net: findCol(headers, "Neto recibido", "Neto"),
+      status: findCol(headers, "Estado en ML", "Estado"),
+      city: findCol(headers, "Ciudad"),
+      title: findCol(headers, "Título de la publicación", "Título"),
+      sku: findCol(headers, "SKU"),
+    };
+    ws.eachRow((row, n) => {
+      if (n <= headerRow) return;
+      const get = (k: keyof typeof c) => (c[k] ? row.getCell(c[k]!).value : null);
+      const buyer = cellText(get("client"));
+      if (!buyer) return;
+      const productsText = cellText(get("products"));
+      const title = cellText(get("title"));
+      const status = cellText(get("status")) || "Entregado";
+      const termText = cellText(get("term"));
+      const months = termText ? parseMonths(termText) : title ? parseMonths(title) : null;
+      const units = Math.max(1, Math.round(num(get("units")) || 1));
+      const saleRaw = cellText(get("sale")).replace(/\D/g, "");
+      const products = productsText
+        ? productsText.split(/[,+]/).map((p) => p.replace(/\(no especifica programa\)/i, "").trim()).filter(Boolean)
+        : parseProducts(`${title} ${cellText(get("sku"))}`);
+      sales.push({
+        sale_id: /^\d{6,}$/.test(saleRaw) ? saleRaw : "",
+        date: parseAnyDate(get("date")),
+        status,
+        ok: !/cancel|reembols|devoluci/i.test(status),
+        buyer,
+        title,
+        sku: cellText(get("sku")),
+        products: products.length ? products.map((p) => (/^autodesk$/i.test(p) ? "Autodesk (sin especificar)" : p)) : ["Autodesk (sin especificar)"],
+        months: termText && /no dice|asumir/i.test(termText) ? null : months,
+        renews_at: parseAnyDate(get("renews")),
+        emails: cellText(get("email")),
+        extra: cellText(get("extra")),
+        units,
+        unit_price: num(get("price")) || num(get("gross")) / units,
+        gross: num(get("gross")) || num(get("price")) * units,
+        fee: Math.abs(num(get("fee"))),
+        net: num(get("net")) || (num(get("gross")) || num(get("price")) * units) - Math.abs(num(get("fee"))),
+        city: cellText(get("city")),
+      });
+    });
+  }
   sales.sort((a, b) => (a.date ?? "").localeCompare(b.date ?? "") || a.sale_id.localeCompare(b.sale_id));
-  return { sales, sheet: ws.name };
+  return { sales, sheet: ws.name, format };
 }
