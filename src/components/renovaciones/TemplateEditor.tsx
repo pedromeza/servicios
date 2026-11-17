@@ -70,7 +70,11 @@ export function TemplateEditor({
             <Field label="WhatsApp de atención" error={e.whatsapp} hint="Se muestra al pie del correo.">
               <Input name="whatsapp" value={form.whatsapp} onChange={set("whatsapp")} placeholder="+52 55 1234 5678" />
             </Field>
-            <Field label="Avisar con (días de anticipación)" error={e.reminder_days}>
+            <Field
+              label="Ventana de la lista (días)"
+              error={e.reminder_days}
+              hint="Un solo número: cuántos días hacia adelante muestra la lista de Renovaciones y tu resumen diario. Los días de los correos automáticos se ponen abajo."
+            >
               <Input name="reminder_days" type="number" min={1} max={365} value={form.reminder_days} onChange={set("reminder_days")} />
             </Field>
           </div>
