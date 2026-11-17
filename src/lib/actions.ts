@@ -206,6 +206,22 @@ export async function saveClient(_prev: ActionState, fd: FormData): Promise<Acti
   return { ok: true };
 }
 
+/** Crea un cliente solo con el nombre, desde un selector. Devuelve la opción para seleccionarla al momento. */
+export async function quickCreateClient(name: string): Promise<{ ok: true; value: string; label: string } | { ok: false; error: string }> {
+  const clean = name.trim();
+  if (!clean || clean.length > 120) return { ok: false, error: "Nombre inválido." };
+  const { supabase } = await requireUser();
+  const existing = await supabase.from("clients").select("id,name,deleted_at");
+  if (existing.error) return { ok: false, error: existing.error.message };
+  const dup = (existing.data as { id: string; name: string; deleted_at: string | null }[]).find((c) => normalizeName(c.name) === normalizeName(clean));
+  if (dup) return dup.deleted_at ? { ok: false, error: `“${dup.name}” está en la papelera; restáuralo desde Clientes.` } : { ok: true, value: dup.id, label: dup.name };
+  const ins = await supabase.from("clients").insert({ name: clean }).select("id,name").single();
+  if (ins.error) return { ok: false, error: ins.error.message };
+  await audit(supabase, "create", "client", ins.data.id, clean);
+  refresh();
+  return { ok: true, value: ins.data.id, label: ins.data.name };
+}
+
 export async function deleteClient(id: string): Promise<ActionState> {
   return trashRow("clients", id, "name");
 }
@@ -221,7 +237,7 @@ const accountSchema = z.object({
   parent_account_id: uuidOrNull,
   client_id: uuidOrNull,
   contracted_at: dateField,
-  term_years: z.enum(["1", "2", "3"], "Elige 1, 2 o 3 años").nullable(),
+  term_months: z.coerce.number().int().min(1, "Mínimo 1 mes").max(120, "Máximo 120 meses").nullable(),
   notes: z.string().max(2000),
 });
 
@@ -236,7 +252,7 @@ export async function saveAccount(_prev: ActionState, fd: FormData): Promise<Act
     parent_account_id: orNull(str(fd, "parent_account_id")),
     client_id: orNull(str(fd, "client_id")),
     contracted_at: orNull(str(fd, "contracted_at")),
-    term_years: orNull(str(fd, "term_years")),
+    term_months: orNull(str(fd, "term_months")),
     notes: str(fd, "notes"),
   });
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
@@ -254,15 +270,24 @@ export async function saveAccount(_prev: ActionState, fd: FormData): Promise<Act
     client_id: d.client_id,
     // La vigencia solo aplica a cuentas propias (sin cliente asignado).
     contracted_at: d.client_id ? null : d.contracted_at,
-    term_years: d.client_id ? null : d.term_years ? Number(d.term_years) : null,
+    term_months: d.client_id ? null : d.term_months,
+    // Compatibilidad con la columna anterior (solo si es 1, 2 o 3 años exactos).
+    term_years: d.client_id || !d.term_months || d.term_months % 12 !== 0 || d.term_months > 36 ? null : d.term_months / 12,
     notes_enc: encrypt(d.notes),
   };
   // Al editar, dejar la contraseña vacía conserva la actual.
   if (d.password !== "" || !d.id) payload.password_enc = encrypt(d.password);
 
-  const res = d.id
+  let res = d.id
     ? await supabase.from("accounts").update(payload).eq("id", d.id).select("id").single()
     : await supabase.from("accounts").insert(payload).select("id").single();
+  if (res.error && /term_months|schema cache/i.test(res.error.message)) {
+    // Migración 0015 pendiente: guardar solo en años.
+    delete (payload as Record<string, unknown>).term_months;
+    res = d.id
+      ? await supabase.from("accounts").update(payload).eq("id", d.id).select("id").single()
+      : await supabase.from("accounts").insert(payload).select("id").single();
+  }
   if (res.error) return { ok: false, error: res.error.message };
   await audit(supabase, d.id ? "update" : "create", "account", res.data.id, `${d.label} · ${d.provider}`);
   refresh();
@@ -355,7 +380,7 @@ const renewSchema = z.object({
   amount: z.coerce.number().min(0, "No puede ser negativo"),
   cost: z.coerce.number().min(0, "No puede ser negativo"),
   renewed_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida"),
-  years: z.coerce.number().int().min(1).max(3),
+  months: z.coerce.number().int().min(1, "Mínimo 1 mes").max(120, "Máximo 120 meses"),
   only_payment: z.boolean(), // solo anotar el cobro de una renovación ya hecha, sin mover fechas
   plan: z.enum(["individual", "suite"]),
   products: z.array(z.string().min(1).max(80)).min(1, "Marca al menos un programa"),
@@ -367,7 +392,7 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
     amount: str(fd, "amount") || "0",
     cost: str(fd, "cost") || "0",
     renewed_at: str(fd, "renewed_at") || todayISO(),
-    years: str(fd, "years") || "1",
+    months: str(fd, "months") || "12",
     only_payment: fd.get("only_payment") === "on",
     plan: str(fd, "plan") || "individual",
     products: Array.from(
@@ -389,7 +414,7 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
   let to_date = previous;
   if (!d.only_payment) {
     const base = previous && previous >= d.renewed_at ? previous : d.renewed_at;
-    to_date = addYearsISO(base, d.years);
+    to_date = addMonthsISO(base, d.months);
     // La suscripción queda con el alcance renovado (p. ej. tenía la suite y renueva solo AutoCAD y Revit).
     const upd = await supabase
       .from("subscriptions")
@@ -398,7 +423,7 @@ export async function renewSubscription(_prev: ActionState, fd: FormData): Promi
     if (upd.error) return { ok: false, error: upd.error.message };
   } else {
     // La fecha ya está corrida: el cobro cubre hasta la renovación vigente.
-    from_date = previous ? addYearsISO(previous, -d.years) : null;
+    from_date = previous ? addMonthsISO(previous, -d.months) : null;
   }
   const eventRow = {
     subscription_id: d.id,

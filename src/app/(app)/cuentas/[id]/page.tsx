@@ -8,7 +8,8 @@ import { SecretField } from "@/components/ui/SecretField";
 import { getAccount } from "@/lib/data";
 import { daysUntil, fmtDate, fmtMoney } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
-import { ACCOUNT_TERMS, SUB_PLANS, SUB_STATUS } from "@/lib/types";
+import { SUB_PLANS, SUB_STATUS } from "@/lib/types";
+import { termLabel } from "@/lib/terms";
 
 export const metadata: Metadata = { title: "Detalle de cuenta" };
 
@@ -61,11 +62,11 @@ export default async function CuentaDetallePage({ params }: PageProps<"/cuentas/
                 <dd className="mt-1 whitespace-pre-wrap text-slate-700">{a.notes}</dd>
               </div>
             )}
-            {!a.client_id && a.term_years && (
+            {!a.client_id && a.term_months && (
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vigencia</dt>
                 <dd className="mt-1 text-slate-700">
-                  {ACCOUNT_TERMS[a.term_years]}
+                  {termLabel(a.term_months)}
                   {a.contracted_at && ` · contratada el ${fmtDate(a.contracted_at)}`}
                   {a.expires_at && (
                     <div className="mt-1 flex items-center gap-2">

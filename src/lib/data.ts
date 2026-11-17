@@ -2,10 +2,11 @@ import "server-only";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { decrypt } from "./crypto";
 import { requireUser } from "./auth";
-import { addYearsISO, daysUntil } from "./format";
+import { addMonthsISO, daysUntil } from "./format";
 import { buildCard, type LoyaltyCard, type Reward, type Stamp } from "./loyalty";
 import { DEFAULT_REMINDER, whatsappNumber, type ReminderSettings } from "./reminders";
 import { splitEmails } from "./emails";
+import { PROVIDERS } from "./types";
 import type {
   Account,
   AuditEntry,
@@ -62,6 +63,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0012_trash_history.sql", () => supabase.from("clients").select("deleted_at").limit(1)],
     ["0013_members.sql", () => supabase.from("members").select("id").limit(1)],
     ["0014_renewal_scope.sql", () => supabase.from("renewal_events").select("plan").limit(1)],
+    ["0015_term_months.sql", () => supabase.from("accounts").select("term_months").limit(1)],
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
   return results.filter(({ res }) => res.error && isMissingSchema(res.error)).map(({ name }) => name);
@@ -142,8 +144,11 @@ async function loadAccounts(): Promise<Account[]> {
     client_id: r.client_id,
     client_name: r.client?.name ?? null,
     contracted_at: r.contracted_at ?? null,
-    term_years: r.term_years ?? null,
-    expires_at: r.contracted_at && r.term_years ? addYearsISO(r.contracted_at, r.term_years) : null,
+    term_months: r.term_months ?? (r.term_years ? Number(r.term_years) * 12 : null),
+    expires_at:
+      r.contracted_at && (r.term_months || r.term_years)
+        ? addMonthsISO(r.contracted_at, Number(r.term_months ?? Number(r.term_years) * 12))
+        : null,
     notes: decrypt(r.notes_enc),
     created_at: r.created_at,
     deleted_at: r.deleted_at ?? null,
@@ -170,6 +175,12 @@ export async function getAccount(id: string) {
   const children = all.filter((a) => a.parent_account_id === id);
   const subscriptions = (await listSubscriptions()).filter((s) => s.account_id === id);
   return { account, children, subscriptions };
+}
+
+/** Proveedores: los fijos más los que ya se usaron en alguna cuenta. */
+export async function providerOptions(): Promise<string[]> {
+  const all = await loadAccounts();
+  return Array.from(new Set([...PROVIDERS, ...all.map((a) => a.provider).filter(Boolean)]));
 }
 
 export async function accountOptions(): Promise<Option[]> {

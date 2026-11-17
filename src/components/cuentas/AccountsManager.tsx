@@ -7,7 +7,8 @@ import { useCallback, useState, useTransition } from "react";
 import { deleteAccount, purgeAccount, restoreAccount } from "@/lib/actions";
 import { daysUntil, fmtDate, fmtDateTime } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
-import { ACCOUNT_ROLES, ACCOUNT_TERMS, PROVIDERS, type Account, type Option } from "@/lib/types";
+import { ACCOUNT_ROLES, type Account, type Option } from "@/lib/types";
+import { termLabel } from "@/lib/terms";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
@@ -24,10 +25,12 @@ export function AccountsManager({
   total,
   admins,
   clients,
+  providers,
 }: {
   accounts: Account[];
   paging: Page;
   total: number;
+  providers: string[];
   admins: Option[];
   clients: Option[];
 }) {
@@ -58,7 +61,7 @@ export function AccountsManager({
         placeholder="Buscar por nombre, correo, cliente…"
         filters={[
           { name: "estado", label: "Mostrar", options: [{ value: "eliminadas", label: "Eliminadas (papelera)" }] },
-          { name: "provider", label: "Proveedor", options: PROVIDERS.map((p) => ({ value: p, label: p })) },
+          { name: "provider", label: "Proveedor", options: providers.map((p) => ({ value: p, label: p })) },
           { name: "role", label: "Tipo", options: Object.entries(ACCOUNT_ROLES).map(([k, v]) => ({ value: k, label: v })) },
         ]}
       />
@@ -119,9 +122,9 @@ export function AccountsManager({
                   </Td>
                   <Td>
                     {a.client_name ?? <span className="text-slate-400">Propia</span>}
-                    {!a.client_id && a.term_years && (
+                    {!a.client_id && a.term_months && (
                       <div className="mt-1 flex flex-wrap items-center gap-1 text-xs text-slate-400">
-                        <span>{ACCOUNT_TERMS[a.term_years]}</span>
+                        <span>{termLabel(a.term_months)}</span>
                         {a.expires_at && (
                           <>
                             <span>· vence {fmtDate(a.expires_at)}</span>
@@ -166,7 +169,7 @@ export function AccountsManager({
       </Card>
 
       <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nueva cuenta" : "Editar cuenta"} wide>
-        <AccountForm key={nonce} account={editing === "new" ? null : editing} admins={admins} clients={clients} onDone={close} onCancel={close} />
+        <AccountForm key={nonce} account={editing === "new" ? null : editing} admins={admins} clients={clients} providers={providers} onDone={close} onCancel={close} />
       </Dialog>
       <ConfirmDialog
         open={deleting !== null}

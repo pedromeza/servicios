@@ -2,17 +2,18 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { renewSubscription, type ActionState } from "@/lib/actions";
-import { addYearsISO, fmtDate, fmtMoney, todayISO } from "@/lib/format";
-import { ACCOUNT_TERMS, PRODUCTS_BY_PROVIDER, SUB_PLANS, type Provider, type Subscription } from "@/lib/types";
+import { addMonthsISO, fmtDate, fmtMoney, todayISO } from "@/lib/format";
+import { PRODUCTS_BY_PROVIDER, SUB_PLANS, type Provider, type Subscription } from "@/lib/types";
+import { TermSelect } from "@/components/ui/TermSelect";
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, FormError, Input, Select } from "@/components/ui/Fields";
+import { Field, FormError, Input } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
 
 /** Renovar una suscripción registrando cuánto se cobró, cuánto costó y por cuánto tiempo. */
 export function RenewDialog({ subscription: s, onClose }: { subscription: Subscription | null; onClose: () => void }) {
   const [state, action] = useActionState<ActionState, FormData>(renewSubscription, null);
-  const [years, setYears] = useState("1");
+  const [months, setMonths] = useState("12");
   const [renewedAt, setRenewedAt] = useState(todayISO());
   const [onlyPayment, setOnlyPayment] = useState(false);
   const [plan, setPlan] = useState<string>(s?.plan ?? "individual");
@@ -35,7 +36,7 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
   const e = state?.errors ?? {};
   if (!s) return null;
   const base = s.renews_at && s.renews_at >= renewedAt ? s.renews_at : renewedAt;
-  const next = addYearsISO(base, Number(years) || 1);
+  const next = addMonthsISO(base, Number(months) || 12);
 
   return (
     <Dialog open onClose={onClose} title="Renovar suscripción" description={`${s.products.join(", ")} · ${s.client_name ?? "sin cliente"} · ${s.account_label}`} wide>
@@ -52,14 +53,8 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
           <Field label="Fecha del cobro" error={e.renewed_at}>
             <Input name="renewed_at" type="date" value={renewedAt} onChange={(ev) => setRenewedAt(ev.target.value)} />
           </Field>
-          <Field label={onlyPayment ? "Periodo que cubrió" : "Renovar por"} error={e.years} hint={onlyPayment ? `Se registra como cobrado hasta ${fmtDate(s.renews_at)}.` : `Nueva renovación: ${fmtDate(next)}.`}>
-            <Select name="years" value={years} onChange={(ev) => setYears(ev.target.value)}>
-              {Object.entries(ACCOUNT_TERMS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </Select>
+          <Field label={onlyPayment ? "Periodo que cubrió" : "Renovar por"} error={e.months} hint={onlyPayment ? `Se registra como cobrado hasta ${fmtDate(s.renews_at)}.` : `Nueva renovación: ${fmtDate(next)}. Escribe otra, p. ej. 18 o 5 años.`}>
+            <TermSelect name="months" value={months} onChange={setMonths} />
           </Field>
         </div>
         <Field label="Qué se renueva" error={e.products} hint={plan === "suite" ? "La suscripción queda como suite completa." : "La suscripción queda solo con los programas marcados."}>

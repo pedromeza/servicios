@@ -29,6 +29,7 @@ const BASELINE_CHECKS = {
   "0012_trash_history.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='clients' and column_name='deleted_at')`,
   "0013_members.sql": `select to_regclass('public.members') is not null`,
   "0014_renewal_scope.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='renewal_events' and column_name='products')`,
+  "0015_term_months.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='accounts' and column_name='term_months')`,
 };
 
 /**

@@ -2,7 +2,8 @@
 
 import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
-import { saveLicense, type ActionState } from "@/lib/actions";
+import { quickCreateClient, saveLicense, type ActionState } from "@/lib/actions";
+import { ComboSelect } from "@/components/ui/ComboSelect";
 import { addYearsISO, fmtDate, todayISO } from "@/lib/format";
 import {
   LICENSE_KINDS,
@@ -32,6 +33,14 @@ export function LicenseForm({
 }) {
   const [state, action] = useActionState<ActionState, FormData>(saveLicense, null);
   const [status, setStatus] = useState<string>(license?.status ?? "available");
+  const [clientId, setClientId] = useState<string>(license?.client_id ?? "");
+  const [clientList, setClientList] = useState<Option[]>(clients);
+  const createClient = async (label: string) => {
+    const res = await quickCreateClient(label);
+    if (!res.ok) throw new Error(res.error);
+    setClientList((l) => (l.some((c) => c.value === res.value) ? l : [...l, { value: res.value, label: res.label }]));
+    return { value: res.value, label: res.label };
+  };
   const [kind, setKind] = useState<string>(license?.kind ?? "key");
   const [term, setTerm] = useState<string>(license?.term ?? "perpetual");
   const [purchasedAt, setPurchasedAt] = useState<string>(license?.purchased_at ?? "");
@@ -148,14 +157,16 @@ export function LicenseForm({
                     placeholder={`Correo del puesto ${i + 1}`}
                     className="col-span-2 sm:col-span-1"
                   />
-                  <Select name="seat_client" value={row.client_id} onChange={(ev) => updateRow(row.key, { client_id: ev.target.value })}>
-                    <option value="">Sin cliente</option>
-                    {clients.map((c) => (
-                      <option key={c.value} value={c.value}>
-                        {c.label}
-                      </option>
-                    ))}
-                  </Select>
+                  <ComboSelect
+                    name="seat_client"
+                    value={row.client_id}
+                    onChange={(v) => updateRow(row.key, { client_id: v })}
+                    options={clientList}
+                    emptyLabel="Sin cliente"
+                    placeholder="Buscar cliente…"
+                    createLabel="Crear cliente"
+                    onCreate={createClient}
+                  />
                   <Button size="icon" variant="ghost" aria-label="Quitar puesto" className="hover:text-red-600" onClick={() => removeRow(row.key)}>
                     <Trash2 size={15} />
                   </Button>
@@ -223,15 +234,17 @@ export function LicenseForm({
             ))}
           </Select>
         </Field>
-        <Field label={isAccount ? "Cliente de la cuenta principal" : "Cliente"} error={e.client_id}>
-          <Select name="client_id" defaultValue={license?.client_id ?? ""}>
-            <option value="">{isAccount ? "Sin asignar (propia)" : "Sin asignar"}</option>
-            {clients.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
+        <Field label={isAccount ? "Cliente de la cuenta principal" : "Cliente"} error={e.client_id} hint="Escribe para buscar; si no existe, lo creas desde aquí.">
+          <ComboSelect
+            name="client_id"
+            value={clientId}
+            onChange={setClientId}
+            options={clientList}
+            emptyLabel={isAccount ? "Sin asignar (propia)" : "Sin asignar"}
+            placeholder="Buscar cliente…"
+            createLabel="Crear cliente"
+            onCreate={createClient}
+          />
         </Field>
       </div>
 

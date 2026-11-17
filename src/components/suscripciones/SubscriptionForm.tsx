@@ -1,22 +1,23 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
-import { saveSubscription, type ActionState } from "@/lib/actions";
+import { quickCreateClient, saveSubscription, type ActionState } from "@/lib/actions";
+import { ComboSelect } from "@/components/ui/ComboSelect";
 import { splitEmails } from "@/lib/emails";
-import { addMonthsISO, addYearsISO, todayISO } from "@/lib/format";
-import { ACCOUNT_TERMS, CURRENCIES, PRODUCTS_BY_PROVIDER, SUB_PLANS, SUB_STATUS, type Option, type Provider, type Subscription } from "@/lib/types";
+import { addMonthsISO, todayISO } from "@/lib/format";
+import { CURRENCIES, PRODUCTS_BY_PROVIDER, SUB_PLANS, SUB_STATUS, type Option, type Provider, type Subscription } from "@/lib/types";
+import { TermSelect } from "@/components/ui/TermSelect";
 
-const TERM_KEYS = Object.keys(ACCOUNT_TERMS);
-
-/** Renovación = compra + vigencia en años + meses gratis de promoción. */
-function renewalFor(purchasedAt: string, years: number, promoMonths: number): string {
-  return addMonthsISO(addYearsISO(purchasedAt, years), promoMonths);
+/** Renovación = compra + vigencia en meses + meses gratis de promoción. */
+function renewalFor(purchasedAt: string, months: number, promoMonths: number): string {
+  return addMonthsISO(purchasedAt, months + promoMonths);
 }
 
-/** Devuelve la vigencia (en años) si la renovación coincide con compra + N años + promo; si no, "". */
+/** Devuelve la vigencia (en meses) si la renovación coincide con compra + N meses + promo; si no, "". */
 function termFor(purchasedAt: string, renewsAt: string, promoMonths: number): string {
   if (!purchasedAt || !renewsAt) return "";
-  return TERM_KEYS.find((k) => renewalFor(purchasedAt, Number(k), promoMonths) === renewsAt) ?? "";
+  for (let m = 1; m <= 120; m++) if (renewalFor(purchasedAt, m, promoMonths) === renewsAt) return String(m);
+  return "";
 }
 
 const toMonths = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
@@ -39,6 +40,8 @@ export function SubscriptionForm({
 }) {
   const [state, action] = useActionState<ActionState, FormData>(saveSubscription, null);
   const [accountId, setAccountId] = useState(sub?.account_id ?? accounts[0]?.value ?? "");
+  const [clientId, setClientId] = useState<string>(sub?.client_id ?? "");
+  const [clientList, setClientList] = useState<Option[]>(clients);
   const [plan, setPlan] = useState<string>(sub?.plan ?? "individual");
   const [status, setStatus] = useState<string>(sub?.status ?? "active");
   const [emailText, setEmailText] = useState<string>(sub?.email ?? "");
@@ -69,24 +72,31 @@ export function SubscriptionForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Cuenta" error={e.account_id}>
-          <Select name="account_id" value={accountId} onChange={(ev) => setAccountId(ev.target.value)} required>
-            {accounts.length === 0 && <option value="">Primero crea una cuenta</option>}
-            {accounts.map((a) => (
-              <option key={a.value} value={a.value}>
-                [{a.meta}] {a.label}
-              </option>
-            ))}
-          </Select>
+          <ComboSelect
+            name="account_id"
+            value={accountId}
+            onChange={setAccountId}
+            options={accounts.map((a) => ({ value: a.value, label: a.label, hint: a.meta }))}
+            placeholder={accounts.length === 0 ? "Primero crea una cuenta" : "Buscar cuenta…"}
+            required
+          />
         </Field>
-        <Field label="Cliente" error={e.client_id}>
-          <Select name="client_id" defaultValue={sub?.client_id ?? ""}>
-            <option value="">Sin asignar</option>
-            {clients.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
+        <Field label="Cliente" error={e.client_id} hint="Escribe para buscar; si no existe, lo creas desde aquí.">
+          <ComboSelect
+            name="client_id"
+            value={clientId}
+            onChange={setClientId}
+            options={clientList}
+            emptyLabel="Sin asignar"
+            placeholder="Buscar cliente…"
+            createLabel="Crear cliente"
+            onCreate={async (label) => {
+              const res = await quickCreateClient(label);
+              if (!res.ok) throw new Error(res.error);
+              setClientList((l) => (l.some((c) => c.value === res.value) ? l : [...l, { value: res.value, label: res.label }]));
+              return { value: res.value, label: res.label };
+            }}
+          />
         </Field>
       </div>
 
@@ -162,15 +172,8 @@ export function SubscriptionForm({
             }}
           />
         </Field>
-        <Field label="Vigencia" hint="Calcula la renovación desde la fecha de compra.">
-          <Select name="term_years" value={term} onChange={(ev) => applyTerm(ev.target.value, purchasedAt, toMonths(promo))}>
-            <option value="">Manual</option>
-            {Object.entries(ACCOUNT_TERMS).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
-            ))}
-          </Select>
+        <Field label="Vigencia" hint="Calcula la renovación desde la fecha de compra. Escribe otra, p. ej. 18 o 5 años.">
+          <TermSelect name="term_months" value={term} emptyLabel="Manual" onChange={(v) => applyTerm(v, purchasedAt, toMonths(promo))} />
         </Field>
         <Field label="Fecha de renovación" error={e.renews_at}>
           <Input

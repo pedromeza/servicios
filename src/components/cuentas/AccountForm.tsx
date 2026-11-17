@@ -2,9 +2,11 @@
 
 import { Eye, EyeOff } from "lucide-react";
 import { useActionState, useEffect, useState } from "react";
-import { saveAccount, type ActionState } from "@/lib/actions";
-import { addYearsISO, fmtDate, todayISO } from "@/lib/format";
-import { ACCOUNT_ROLES, ACCOUNT_TERMS, PROVIDERS, type Account, type Option } from "@/lib/types";
+import { quickCreateClient, saveAccount, type ActionState } from "@/lib/actions";
+import { ComboSelect } from "@/components/ui/ComboSelect";
+import { addMonthsISO, fmtDate, todayISO } from "@/lib/format";
+import { TermSelect } from "@/components/ui/TermSelect";
+import { ACCOUNT_ROLES, type Account, type Option } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { Field, FormError, Input, Select, Textarea } from "@/components/ui/Fields";
 import { SubmitButton } from "@/components/ui/SubmitButton";
@@ -13,23 +15,29 @@ export function AccountForm({
   account,
   admins,
   clients,
+  providers,
   onDone,
   onCancel,
 }: {
   account: Account | null;
   admins: Option[];
   clients: Option[];
+  providers: string[];
   onDone: () => void;
   onCancel: () => void;
 }) {
   const [state, action] = useActionState<ActionState, FormData>(saveAccount, null);
   const [role, setRole] = useState<string>(account?.role ?? "user");
   const [clientId, setClientId] = useState<string>(account?.client_id ?? "");
+  const [provider, setProvider] = useState<string>(account?.provider ?? providers[0] ?? "Autodesk");
+  const [providerList, setProviderList] = useState<string[]>(() => Array.from(new Set([...providers, ...(account?.provider ? [account.provider] : [])])));
+  const [clientList, setClientList] = useState<Option[]>(clients);
+  const [parentId, setParentId] = useState<string>(account?.parent_account_id ?? "");
   const [contractedAt, setContractedAt] = useState<string>(account?.contracted_at ?? "");
-  const [termYears, setTermYears] = useState<string>(account?.term_years ? String(account.term_years) : "");
+  const [termMonths, setTermMonths] = useState<string>(account?.term_months ? String(account.term_months) : "");
   const [show, setShow] = useState(false);
   const isOwn = clientId === "";
-  const expiresAt = contractedAt && termYears ? addYearsISO(contractedAt, Number(termYears)) : null;
+  const expiresAt = contractedAt && termMonths ? addMonthsISO(contractedAt, Number(termMonths)) : null;
   useEffect(() => {
     if (state?.ok) onDone();
   }, [state, onDone]);
@@ -41,12 +49,20 @@ export function AccountForm({
       <FormError message={state?.error} />
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Proveedor" error={e.provider}>
-          <Select name="provider" defaultValue={account?.provider ?? "Autodesk"}>
-            {PROVIDERS.map((p) => (
-              <option key={p}>{p}</option>
-            ))}
-          </Select>
+        <Field label="Proveedor" error={e.provider} hint="Escribe para buscar o para agregar uno nuevo.">
+          <ComboSelect
+            name="provider"
+            value={provider}
+            onChange={setProvider}
+            options={providerList.map((p) => ({ value: p, label: p }))}
+            placeholder="Buscar proveedor…"
+            createLabel="Agregar proveedor"
+            required
+            onCreate={(label) => {
+              setProviderList((l) => (l.includes(label) ? l : [...l, label]));
+              return { value: label, label };
+            }}
+          />
         </Field>
         <Field label="Tipo de cuenta" error={e.role}>
           <Select name="role" value={role} onChange={(ev) => setRole(ev.target.value)}>
@@ -85,27 +101,32 @@ export function AccountForm({
       <div className="grid gap-4 sm:grid-cols-2">
         {role === "user" && (
           <Field label="Depende de la cuenta admin" error={e.parent_account_id}>
-            <Select name="parent_account_id" defaultValue={account?.parent_account_id ?? ""}>
-              <option value="">Ninguna</option>
-              {admins
-                .filter((a) => a.value !== account?.id)
-                .map((a) => (
-                  <option key={a.value} value={a.value}>
-                    {a.label}
-                  </option>
-                ))}
-            </Select>
+            <ComboSelect
+              name="parent_account_id"
+              value={parentId}
+              onChange={setParentId}
+              options={admins.filter((a) => a.value !== account?.id)}
+              emptyLabel="Ninguna"
+              placeholder="Buscar cuenta admin…"
+            />
           </Field>
         )}
-        <Field label="Cliente asignado" error={e.client_id}>
-          <Select name="client_id" value={clientId} onChange={(ev) => setClientId(ev.target.value)}>
-            <option value="">Sin asignar (propia)</option>
-            {clients.map((c) => (
-              <option key={c.value} value={c.value}>
-                {c.label}
-              </option>
-            ))}
-          </Select>
+        <Field label="Cliente asignado" error={e.client_id} hint="Escribe para buscar; si no existe, lo creas desde aquí.">
+          <ComboSelect
+            name="client_id"
+            value={clientId}
+            onChange={setClientId}
+            options={clientList}
+            emptyLabel="Sin asignar (propia)"
+            placeholder="Buscar cliente…"
+            createLabel="Crear cliente"
+            onCreate={async (label) => {
+              const res = await quickCreateClient(label);
+              if (!res.ok) throw new Error(res.error);
+              setClientList((l) => (l.some((c) => c.value === res.value) ? l : [...l, { value: res.value, label: res.label }]));
+              return { value: res.value, label: res.label };
+            }}
+          />
         </Field>
       </div>
 
@@ -116,24 +137,18 @@ export function AccountForm({
           </Field>
           <Field
             label="Vigencia"
-            error={e.term_years}
-            hint={expiresAt ? `Vence el ${fmtDate(expiresAt)}.` : "Por cuánto tiempo contrataste esta cuenta."}
+            error={e.term_months}
+            hint={expiresAt ? `Vence el ${fmtDate(expiresAt)}.` : "Por cuánto tiempo contrataste esta cuenta. Escribe otra, p. ej. 18 o 5 años."}
           >
-            <Select
-              name="term_years"
-              value={termYears}
-              onChange={(ev) => {
-                setTermYears(ev.target.value);
-                if (ev.target.value && !contractedAt) setContractedAt(todayISO());
+            <TermSelect
+              name="term_months"
+              value={termMonths}
+              emptyLabel="Sin definir"
+              onChange={(v) => {
+                setTermMonths(v);
+                if (v && !contractedAt) setContractedAt(todayISO());
               }}
-            >
-              <option value="">Sin definir</option>
-              {Object.entries(ACCOUNT_TERMS).map(([k, v]) => (
-                <option key={k} value={k}>
-                  {v}
-                </option>
-              ))}
-            </Select>
+            />
           </Field>
         </div>
       )}
