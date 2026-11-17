@@ -223,8 +223,9 @@ export type PaymentLink = {
   currency: string;
   months: number;
   url: string | null;
-  status: "pending" | "paid" | "cancelled";
+  status: "pending" | "paid" | "cancelled" | "refunded";
   paid_at: string | null;
+  refunded_at: string | null; // cuándo Mercado Pago avisó del reembolso o contracargo
   created_at: string;
 };
 

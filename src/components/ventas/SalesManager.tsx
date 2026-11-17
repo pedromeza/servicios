@@ -164,7 +164,7 @@ export function SalesManager({
         <Card className="mb-4">
           <CardHeader
             title="Links de pago de Mercado Pago"
-            description={`${links.filter((l) => l.status === "pending").length} pendiente${links.filter((l) => l.status === "pending").length === 1 ? "" : "s"} · ${links.filter((l) => l.status === "paid").length} pagado${links.filter((l) => l.status === "paid").length === 1 ? "" : "s"}. Al pagarse, la renovación o la venta se registra sola.`}
+            description={`${links.filter((l) => l.status === "pending").length} pendiente${links.filter((l) => l.status === "pending").length === 1 ? "" : "s"} · ${links.filter((l) => l.status === "paid").length} pagado${links.filter((l) => l.status === "paid").length === 1 ? "" : "s"}${links.some((l) => l.status === "refunded") ? ` · ${links.filter((l) => l.status === "refunded").length} reembolsado${links.filter((l) => l.status === "refunded").length === 1 ? "" : "s"}` : ""}. Al pagarse, la renovación o la venta se registra sola; si hay reembolso, se deshace y te avisa por correo.`}
           />
           <ul className="max-h-72 divide-y divide-navy-100 overflow-y-auto text-sm">
             {links.map((l) => (
@@ -173,13 +173,13 @@ export function SalesManager({
                   <div className="truncate font-medium text-navy-900">{l.concept}</div>
                   <div className="text-xs text-slate-500">
                     {l.client_name ?? "Sin cliente"} · creado {fmtDateTime(l.created_at)}
-                    {l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : l.status === "pending" ? ` · ${isExpired(l) ? "venció" : "vence"} ${fmtDate(dateInZone(expiresAt(l)))}` : ""}
+                    {l.status === "refunded" ? ` · pagado ${l.paid_at ? fmtDateTime(l.paid_at) : ""} · devuelto ${l.refunded_at ? fmtDateTime(l.refunded_at) : ""}` : l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : l.status === "pending" ? ` · ${isExpired(l) ? "venció" : "vence"} ${fmtDate(dateInZone(expiresAt(l)))}` : ""}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="whitespace-nowrap font-semibold text-navy-900">{fmtMoney(l.amount, l.currency)}</span>
-                  <Badge tone={l.status === "paid" ? "success" : isExpired(l) ? "neutral" : l.status === "pending" ? "warning" : "neutral"}>
-                    {l.status === "paid" ? "Pagado" : isExpired(l) ? "Vencido" : l.status === "pending" ? "Pendiente" : "Cancelado"}
+                  <Badge tone={l.status === "paid" ? "success" : l.status === "refunded" ? "danger" : isExpired(l) ? "neutral" : l.status === "pending" ? "warning" : "neutral"}>
+                    {l.status === "paid" ? "Pagado" : l.status === "refunded" ? "Reembolsado" : isExpired(l) ? "Vencido" : l.status === "pending" ? "Pendiente" : "Cancelado"}
                   </Badge>
                   {l.status === "pending" && !isExpired(l) && l.url && (
                     <>

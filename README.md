@@ -117,6 +117,8 @@ curl -H "Authorization: Bearer TU_CRON_SECRET" https://<nombre>.vercel.app/api/c
 
 Cuando el cliente paga, Mercado Pago avisa a la app: si el link era de una suscripción se registra la renovación con su nueva fecha, y si era un cobro suelto se registra como otra venta. La app siempre consulta el pago a Mercado Pago antes de registrar nada.
 
+Si después hay un **reembolso total o un contracargo**, la app deshace lo registrado: quita el cobro de renovación y regresa la suscripción a su vencimiento y programas anteriores (salvo que la hayas cambiado después del pago), o manda la venta a la papelera. El link queda como "Reembolsado" y te llega un correo a `NOTIFY_EMAIL` para que retires el acceso al cliente. Los reembolsos parciales no se procesan.
+
 ## Estructura
 
 ```

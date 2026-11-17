@@ -73,6 +73,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0018_sales.sql", () => supabase.from("sales").select("id").limit(1)],
     ["0019_payment_links.sql", () => supabase.from("payment_links").select("id").limit(1)],
     ["0020_payment_link_scope.sql", () => supabase.from("payment_links").select("products").limit(1)],
+    ["0021_payment_refunds.sql", () => supabase.from("payment_links").select("refunded_at").limit(1)],
 
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
@@ -588,6 +589,7 @@ export async function listPaymentLinks(limit = 50): Promise<PaymentLink[]> {
     url: r.url ?? null,
     status: r.status,
     paid_at: r.paid_at ?? null,
+    refunded_at: r.refunded_at ?? null,
     created_at: r.created_at,
   }));
 }

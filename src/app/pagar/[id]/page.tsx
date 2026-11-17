@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-type Link = { concept: string; amount: number; currency: string; status: "pending" | "paid" | "cancelled"; url: string | null; expired: boolean };
+type Link = { concept: string; amount: number; currency: string; status: "pending" | "paid" | "cancelled" | "refunded"; url: string | null; expired: boolean };
 
 /** El botón de pago solo puede llevar a Mercado Pago por https: nunca a otro sitio ni a un enlace de script. */
 function safePayUrl(raw: string | null): string | null {
@@ -70,6 +70,11 @@ export default async function PagarPage({ params }: PageProps<"/pagar/[id]">) {
               <p className="mt-2 text-sm text-slate-600">
                 {link.concept} · {fmtMoney(link.amount, link.currency)}. ¡Gracias! Si tienes dudas, escríbenos por WhatsApp.
               </p>
+            </>
+          ) : link.status === "refunded" ? (
+            <>
+              <h1 className="text-xl font-bold">Pago reembolsado</h1>
+              <p className="mt-2 text-sm text-slate-600">Este pago se devolvió y el link ya no está activo. Si quieres pagar de nuevo, escríbenos por WhatsApp y te mandamos otro.</p>
             </>
           ) : link.status === "cancelled" || link.expired || !link.url ? (
             <>
