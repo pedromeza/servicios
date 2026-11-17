@@ -236,7 +236,8 @@ export type LedgerRow = {
   key: string;
   kind: SaleKind;
   ref_id: string; // id de la suscripción, licencia o venta
-  date: string; // YYYY-MM-DD
+  date: string; // YYYY-MM-DD: el día de la venta o del cobro
+  renews_at: string | null; // cuándo renueva o vence lo vendido (null si no aplica)
   client_id: string | null;
   client_name: string | null;
   concept: string;

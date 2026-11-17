@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
   const wb = new ExcelJS.Workbook();
   const ws = wb.addWorksheet("Ventas");
   ws.columns = [
-    { header: "Fecha", key: "date", width: 12 },
+    { header: "Fecha de venta", key: "date", width: 14 },
+    { header: "Renueva", key: "renews", width: 12 },
     { header: "Cliente", key: "client", width: 30 },
     { header: "Concepto", key: "concept", width: 36 },
     { header: "Detalle", key: "detail", width: 36 },
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
   for (const r of rows) {
     ws.addRow({
       date: r.date,
+      renews: r.renews_at ?? "",
       client: r.client_name ?? "",
       concept: r.concept,
       detail: r.detail,
@@ -48,12 +50,12 @@ export async function GET(req: NextRequest) {
     });
   }
   const last = rows.length + 2;
-  ws.getCell(`F${last}`).value = "Total";
-  ws.getCell(`F${last}`).font = { bold: true };
-  ws.getCell(`G${last}`).value = { formula: `SUM(G2:G${last - 1})` };
+  ws.getCell(`G${last}`).value = "Total";
+  ws.getCell(`G${last}`).font = { bold: true };
   ws.getCell(`H${last}`).value = { formula: `SUM(H2:H${last - 1})` };
   ws.getCell(`I${last}`).value = { formula: `SUM(I2:I${last - 1})` };
-  for (const col of ["G", "H", "I"]) ws.getColumn(col).numFmt = "#,##0.00";
+  ws.getCell(`J${last}`).value = { formula: `SUM(J2:J${last - 1})` };
+  for (const col of ["H", "I", "J"]) ws.getColumn(col).numFmt = "#,##0.00";
 
   const buf = await wb.xlsx.writeBuffer();
   const name = `ventas${get("mes") ? `-${get("mes")}` : ""}.xlsx`;

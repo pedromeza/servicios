@@ -348,7 +348,8 @@ export function SalesManager({
             <Table>
               <thead className="border-b border-navy-100">
                 <tr>
-                  <Th>Fecha</Th>
+                  <Th>Fecha de venta</Th>
+                  <Th>Renueva</Th>
                   <Th>Cliente</Th>
                   <Th>Concepto</Th>
                   <Th>Tipo</Th>
@@ -364,6 +365,7 @@ export function SalesManager({
                   return (
                     <tr key={r.key} className="group hover:bg-navy-50/60">
                       <Td className="whitespace-nowrap">{fmtDate(r.date)}</Td>
+                      <Td className="whitespace-nowrap">{r.renews_at ? <span className="font-medium text-navy-900">{fmtDate(r.renews_at)}</span> : <span className="text-slate-400">—</span>}</Td>
                       <Td>
                         {r.client_id ? (
                           <Link href={`/clientes/${r.client_id}`} className="font-medium text-navy-900 hover:underline">
