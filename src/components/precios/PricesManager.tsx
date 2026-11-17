@@ -286,7 +286,7 @@ export function PricesManager({ prices, whatsapp, paymentUrl }: { prices: PriceI
       </Card>
 
       <Dialog open={editing !== null} onClose={close} title={editing === "new" ? "Nuevo precio" : "Editar precio"}>
-        <PriceForm key={nonce} item={editing === "new" ? null : editing} onDone={close} onCancel={close} />
+        <PriceForm key={nonce} item={editing === "new" ? null : editing} usedNotes={prices.map((p) => p.notes ?? "").filter(Boolean)} onDone={close} onCancel={close} />
       </Dialog>
       <ConfirmDialog
         open={deleting !== null}
