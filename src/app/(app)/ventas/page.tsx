@@ -25,6 +25,7 @@ export default async function VentasPage({ searchParams }: PageProps<"/ventas">)
     month: months.find((m) => m.month === thisMonth) ?? null,
     year: { count: yearRows.length, price: yearRows.reduce((n, r) => n + r.price, 0), cost: yearRows.reduce((n, r) => n + r.cost, 0) },
   };
+  const origin = process.env.APP_URL?.replace(/\/$/, "") ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "");
   const platforms = Array.from(new Set(ledger.map((r) => r.platform).filter((p): p is string => Boolean(p)))).sort();
   return (
     <SalesManager
@@ -38,6 +39,7 @@ export default async function VentasPage({ searchParams }: PageProps<"/ventas">)
       platforms={platforms}
       migrationPending={pending.includes("0018_sales.sql")}
       links={links}
+      origin={origin}
       mpReady={mpConfigured()}
     />
   );

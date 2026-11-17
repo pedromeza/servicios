@@ -32,6 +32,11 @@ async function mp<T>(path: string, init: RequestInit & { idempotency?: string } 
 
 export type MpPreference = { id: string; init_point: string; sandbox_init_point?: string };
 
+/** Días que un link de pago acepta cobros antes de vencer solo. */
+export const LINK_DAYS = 30;
+/** Fecha ISO con desplazamiento explícito, como la pide Mercado Pago. */
+const mpDate = (d: Date) => d.toISOString().replace("Z", "+00:00");
+
 /** Crea una preferencia de Checkout Pro y devuelve el link de pago (init_point). */
 export async function createPreference(input: {
   title: string;
@@ -50,10 +55,18 @@ export async function createPreference(input: {
       external_reference: input.external_reference,
       notification_url: input.notification_url,
       statement_descriptor: "PGPM MEX",
+      // El link vence solo: pasado ese plazo Mercado Pago ya no acepta el pago.
+      expires: true,
+      expiration_date_to: mpDate(new Date(Date.now() + LINK_DAYS * 86_400_000)),
       ...(input.payer_email ? { payer: { email: input.payer_email } } : {}),
       ...(input.back_url ? { back_urls: { success: input.back_url, pending: input.back_url, failure: input.back_url }, auto_return: "approved" } : {}),
     }),
   });
+}
+
+/** Cancela de verdad un link: la preferencia vence en este momento y Mercado Pago deja de aceptar el pago. */
+export async function expirePreference(id: string): Promise<void> {
+  await mp(`/checkout/preferences/${id}`, { method: "PUT", body: JSON.stringify({ expires: true, expiration_date_to: mpDate(new Date()) }) });
 }
 
 export type MpPayment = {

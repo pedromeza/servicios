@@ -47,15 +47,17 @@ export function PayLinkButton({
       setOpen(true);
     });
   const copy = async () => {
-    if (!result?.url) return;
+    if (!share) return;
     try {
-      await navigator.clipboard.writeText(result.url);
+      await navigator.clipboard.writeText(share);
       setCopied(true);
     } catch {
-      window.prompt("Copia el link:", result.url);
+      window.prompt("Copia el link:", share);
     }
   };
-  const waText = result?.url ? `${waIntro ?? "Hola, aquí tienes tu link de pago de PGPM MEX"}${result.concept ? ` (${result.concept}, ${fmtMoney(result.amount ?? 0)})` : ""}:\n${result.url}` : "";
+  // Se comparte la página de cobro de la app (con la marca), que lleva a Mercado Pago.
+  const share = result?.share_url ?? result?.url ?? "";
+  const waText = share ? `${waIntro ?? "Hola, aquí tienes tu link de pago de PGPM MEX"}${result?.concept ? ` (${result.concept}, ${fmtMoney(result.amount ?? 0)})` : ""}:\n${share}\n\nEl pago es seguro, por Mercado Pago a nombre de PGPM MEX.` : "";
 
   return (
     <>
@@ -72,7 +74,7 @@ export function PayLinkButton({
         {result?.ok && result.url ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg border border-navy-200 bg-navy-50 px-3 py-2 text-sm">
-              <input readOnly value={result.url} className="min-w-0 flex-1 bg-transparent text-slate-700 outline-none" onFocus={(ev) => ev.currentTarget.select()} />
+              <input readOnly value={share} className="min-w-0 flex-1 bg-transparent text-slate-700 outline-none" onFocus={(ev) => ev.currentTarget.select()} />
               <Button size="sm" variant="secondary" onClick={copy}>
                 {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? "Copiado" : "Copiar"}
               </Button>
@@ -90,7 +92,7 @@ export function PayLinkButton({
               >
                 <MessageCircle size={15} /> Mandar por WhatsApp
               </a>
-              <a href={result.url} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-lg border border-navy-200 bg-white px-4 text-sm font-medium text-navy-900 hover:bg-navy-50">
+              <a href={share} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-lg border border-navy-200 bg-white px-4 text-sm font-medium text-navy-900 hover:bg-navy-50">
                 <ExternalLink size={15} /> Abrir
               </a>
               <Button onClick={() => setOpen(false)}>Listo</Button>

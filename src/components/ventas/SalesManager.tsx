@@ -31,6 +31,7 @@ export function SalesManager({
   platforms,
   migrationPending,
   links = [],
+  origin = "",
   mpReady = false,
 }: {
   rows: LedgerRow[];
@@ -43,8 +44,16 @@ export function SalesManager({
   platforms: string[];
   migrationPending: boolean;
   links?: PaymentLink[]; // links de pago de Mercado Pago recientes
+  origin?: string; // URL pública de la app, para armar la página de cobro que se comparte
   mpReady?: boolean;
 }) {
+  const LINK_DAYS = 30; // igual que en lib/mercadopago
+  const expiresAt = (l: PaymentLink) => new Date(new Date(l.created_at).getTime() + LINK_DAYS * 86_400_000);
+  const [now] = useState(() => Date.now());
+  const isExpired = (l: PaymentLink) => l.status === "pending" && expiresAt(l).getTime() < now;
+  const [cancelling, setCancelling] = useState<PaymentLink | null>(null);
+  /** Lo que se comparte con el cliente: la página de cobro de la app (o el link directo si no se conoce el dominio). */
+  const shareUrl = (id: string, direct: string) => (origin ? `${origin}/pagar/${id}` : direct);
   // Cobro suelto con link de Mercado Pago.
   const [charging, setCharging] = useState(false);
   const [chargeConcept, setChargeConcept] = useState("");
@@ -55,10 +64,11 @@ export function SalesManager({
   const [copiedId, setCopiedId] = useState<string | null>(null);
   /** WhatsApp con el link escrito: al número del cliente si lo tiene, o para elegir el contacto. */
   const waHref = (l: { phone?: string | null; client_name?: string | null; concept: string; amount: number; currency?: string; url: string }) => {
-    const text = `Hola${l.client_name ? ` ${l.client_name}` : ""}, te saludamos de PGPM MEX. Aquí tienes tu link de pago (${l.concept}, ${fmtMoney(l.amount, l.currency ?? "MXN")}):\n${l.url}`;
+    const text = `Hola${l.client_name ? ` ${l.client_name}` : ""}, te saludamos de PGPM MEX. Aquí tienes tu link de pago (${l.concept}, ${fmtMoney(l.amount, l.currency ?? "MXN")}):\n${l.url}\n\nEl pago es seguro, por Mercado Pago a nombre de PGPM MEX.`;
     return `https://wa.me/${l.phone ?? ""}?text=${encodeURIComponent(text)}`;
   };
   const [charged, setCharged] = useState<{ concept: string; amount: number; client_id: string } | null>(null);
+  const [chargeShare, setChargeShare] = useState<string | null>(null);
   const copyUrl = async (id: string, url: string) => {
     try {
       await navigator.clipboard.writeText(url);
@@ -161,16 +171,18 @@ export function SalesManager({
                   <div className="truncate font-medium text-navy-900">{l.concept}</div>
                   <div className="text-xs text-slate-500">
                     {l.client_name ?? "Sin cliente"} · creado {fmtDateTime(l.created_at)}
-                    {l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : ""}
+                    {l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : l.status === "pending" ? ` · ${isExpired(l) ? "venció" : "vence"} ${fmtDate(expiresAt(l).toISOString().slice(0, 10))}` : ""}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="whitespace-nowrap font-semibold text-navy-900">{fmtMoney(l.amount, l.currency)}</span>
-                  <Badge tone={l.status === "paid" ? "success" : l.status === "pending" ? "warning" : "neutral"}>{l.status === "paid" ? "Pagado" : l.status === "pending" ? "Pendiente" : "Cancelado"}</Badge>
-                  {l.status === "pending" && l.url && (
+                  <Badge tone={l.status === "paid" ? "success" : isExpired(l) ? "neutral" : l.status === "pending" ? "warning" : "neutral"}>
+                    {l.status === "paid" ? "Pagado" : isExpired(l) ? "Vencido" : l.status === "pending" ? "Pendiente" : "Cancelado"}
+                  </Badge>
+                  {l.status === "pending" && !isExpired(l) && l.url && (
                     <>
                       <a
-                        href={waHref({ ...l, url: l.url })}
+                        href={waHref({ ...l, url: shareUrl(l.id, l.url) })}
                         target="_blank"
                         rel="noopener noreferrer"
                         title={l.phone ? "Mandar el link al WhatsApp del cliente" : "Abrir WhatsApp y elegir a quién mandarlo"}
@@ -178,13 +190,13 @@ export function SalesManager({
                       >
                         <MessageCircle size={13} /> WhatsApp
                       </a>
-                      <a href={l.url} target="_blank" rel="noopener noreferrer" aria-label="Abrir link" title="Abrir el link" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
+                      <a href={shareUrl(l.id, l.url)} target="_blank" rel="noopener noreferrer" aria-label="Abrir link" title="Ver la página de cobro que recibe el cliente" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
                         <ExternalLink size={15} />
                       </a>
-                      <Button size="sm" variant="secondary" onClick={() => copyUrl(l.id, l.url!)}>
+                      <Button size="sm" variant="secondary" onClick={() => copyUrl(l.id, shareUrl(l.id, l.url!))}>
                         {copiedId === l.id ? <Check size={13} /> : <Copy size={13} />} {copiedId === l.id ? "Copiado" : "Copiar"}
                       </Button>
-                      <Button size="icon" variant="ghost" aria-label="Cancelar link" className="hover:text-red-600" disabled={pending} onClick={() => start(() => cancelPaymentLink(l.id).then(() => undefined))}>
+                      <Button size="icon" variant="ghost" aria-label="Cancelar link" title="Cancelar el link: ya no se podrá pagar" className="hover:text-red-600" disabled={pending} onClick={() => setCancelling(l)}>
                         <X size={15} />
                       </Button>
                     </>
@@ -196,12 +208,29 @@ export function SalesManager({
         </Card>
       )}
 
+      <ConfirmDialog
+        open={cancelling !== null}
+        onClose={() => setCancelling(null)}
+        pending={pending}
+        title="Cancelar link de pago"
+        confirmLabel="Cancelar link"
+        pendingLabel="Cancelando…"
+        description={`“${cancelling?.concept}” por ${fmtMoney(cancelling?.amount ?? 0, cancelling?.currency)} dejará de aceptar pagos, también si el cliente ya lo tiene. Si lo necesitas después, generas uno nuevo.`}
+        onConfirm={() => {
+          if (!cancelling) return;
+          start(async () => {
+            const res = await cancelPaymentLink(cancelling.id);
+            if (res && !res.ok && res.error) window.alert(res.error);
+            setCancelling(null);
+          });
+        }}
+      />
       <Dialog open={charging} onClose={() => setCharging(false)} title="Cobrar con link de Mercado Pago" description="Genera un link para cualquier cobro. Al pagarse se registra solo como otra venta.">
         {chargeUrl ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg border border-navy-200 bg-navy-50 px-3 py-2 text-sm">
-              <input readOnly value={chargeUrl} className="min-w-0 flex-1 bg-transparent text-slate-700 outline-none" onFocus={(ev) => ev.currentTarget.select()} />
-              <Button size="sm" variant="secondary" onClick={() => copyUrl("new", chargeUrl)}>
+              <input readOnly value={chargeShare ?? chargeUrl} className="min-w-0 flex-1 bg-transparent text-slate-700 outline-none" onFocus={(ev) => ev.currentTarget.select()} />
+              <Button size="sm" variant="secondary" onClick={() => copyUrl("new", chargeShare ?? chargeUrl)}>
                 {copiedId === "new" ? <Check size={13} /> : <Copy size={13} />} {copiedId === "new" ? "Copiado" : "Copiar"}
               </Button>
             </div>
@@ -209,7 +238,7 @@ export function SalesManager({
             <div className="flex flex-wrap justify-end gap-2">
               {charged && (
                 <a
-                  href={waHref({ ...charged, url: chargeUrl, phone: links.find((l) => l.client_id === charged.client_id && l.phone)?.phone ?? null, client_name: clients.find((c) => c.value === charged.client_id)?.label ?? null })}
+                  href={waHref({ ...charged, url: chargeShare ?? chargeUrl, phone: links.find((l) => l.client_id === charged.client_id && l.phone)?.phone ?? null, client_name: clients.find((c) => c.value === charged.client_id)?.label ?? null })}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#25D366] px-4 text-sm font-medium text-white hover:bg-[#1ebe5d]"
@@ -248,6 +277,7 @@ export function SalesManager({
                       return;
                     }
                     setChargeUrl(res.url);
+                    setChargeShare(res.share_url ?? res.url);
                     setCharged({ concept: chargeConcept.trim(), amount: Number(chargeAmount), client_id: chargeClient });
                     setChargeConcept("");
                     setChargeAmount("");

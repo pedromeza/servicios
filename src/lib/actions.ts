@@ -12,7 +12,7 @@ import { addMonthsISO, addYearsISO, todayISO } from "./format";
 import { LOYALTY } from "./loyalty";
 import { normalizeName, sameName } from "./names";
 import { productsText } from "./products";
-import { createPreference, monthsOf, mpConfigured } from "./mercadopago";
+import { createPreference, expirePreference, monthsOf, mpConfigured } from "./mercadopago";
 import { termLabel } from "./terms";
 import { splitEmails } from "./emails";
 import { parseMlWorkbook, type MlSale } from "./mercadolibre";
@@ -751,7 +751,8 @@ export async function purgeSale(id: string): Promise<ActionState> {
 }
 
 // ---------------------------------------------------------------- Links de pago (Mercado Pago)
-export type PayLinkResult = ActionState & { url?: string; link_id?: string; concept?: string; amount?: number };
+/** `url` es el link directo de Mercado Pago; `share_url` es la página de cobro de la app (la que conviene mandar por WhatsApp). */
+export type PayLinkResult = ActionState & { url?: string; share_url?: string; link_id?: string; concept?: string; amount?: number };
 
 /**
  * Genera un link de pago de Mercado Pago. Para una suscripción, cobra su precio y al pagarse se
@@ -806,7 +807,10 @@ export async function createPaymentLink(input: { subscription_id?: string; clien
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (prev.data?.url) return { ok: true, url: prev.data.url, link_id: prev.data.id, concept: prev.data.concept, amount: Number(prev.data.amount) };
+    if (prev.data?.url) {
+      const base = await appOrigin();
+      return { ok: true, url: prev.data.url, share_url: base ? `${base}/pagar/${prev.data.id}` : prev.data.url, link_id: prev.data.id, concept: prev.data.concept, amount: Number(prev.data.amount) };
+    }
   }
 
   const ins = await supabase
@@ -833,7 +837,7 @@ export async function createPaymentLink(input: { subscription_id?: string; clien
     await supabase.from("payment_links").update({ mp_preference_id: pref.id, url: pref.init_point }).eq("id", linkId);
     await audit(supabase, "create", "payment_link", linkId, `${concept} · ${fmtMoney(amount, currency)}`);
     refresh();
-    return { ok: true, url: pref.init_point, link_id: linkId, concept, amount };
+    return { ok: true, url: pref.init_point, share_url: origin ? `${origin}/pagar/${linkId}` : pref.init_point, link_id: linkId, concept, amount };
   } catch (e) {
     await supabase.from("payment_links").update({ status: "cancelled" }).eq("id", linkId);
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
@@ -843,11 +847,22 @@ export async function createPaymentLink(input: { subscription_id?: string; clien
 export async function cancelPaymentLink(id: string): Promise<ActionState> {
   if (!z.uuid().safeParse(id).success) return { ok: false, error: "Link inválido." };
   const { supabase } = await requireUser();
+  const found = await supabase.from("payment_links").select("mp_preference_id").eq("id", id).eq("status", "pending").maybeSingle();
   const { error } = await supabase.from("payment_links").update({ status: "cancelled" }).eq("id", id).eq("status", "pending");
   if (error) return { ok: false, error: error.message };
+  // También se vence en Mercado Pago, para que el link ya enviado no pueda pagarse.
+  let warn = "";
+  const pref = (found.data as { mp_preference_id: string | null } | null)?.mp_preference_id;
+  if (pref) {
+    try {
+      await expirePreference(pref);
+    } catch (e) {
+      warn = ` Se canceló en la app, pero Mercado Pago no confirmó el vencimiento (${e instanceof Error ? e.message : String(e)}).`;
+    }
+  }
   await audit(supabase, "update", "payment_link", id, "Link de pago cancelado");
   refresh();
-  return { ok: true };
+  return warn ? { ok: false, error: warn.trim() } : { ok: true };
 }
 
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)
