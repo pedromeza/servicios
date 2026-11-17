@@ -863,6 +863,8 @@ const mlRowSchema = z.object({
   sale_id: z.string().regex(/^\d{6,}$/).or(z.literal("")),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   ok: z.boolean(),
+  force: z.boolean().optional(), // marcada a mano aunque esté cancelada/reembolsada o parezca duplicada
+  status: z.string().max(120).optional(),
   buyer: z.string().min(1).max(200),
   title: z.string().max(300),
   products: z.array(z.string().min(1).max(80)).min(1),
@@ -929,7 +931,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
   const result = { ...base, ok: true, account_label: accountLabel };
   const today = todayISO();
   for (const r of rows) {
-    if (!r.ok) {
+    if (!r.ok && !r.force) {
       result.skipped_invalid += 1;
       continue;
     }
@@ -937,7 +939,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
       result.skipped_imported += 1;
       continue;
     }
-    if (!includeSimilar && findSimilar(r, existingSubs)) {
+    if (!includeSimilar && !r.force && findSimilar(r, existingSubs)) {
       result.skipped_similar += 1;
       continue;
     }
@@ -963,6 +965,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
       r.title,
       r.gross || r.fee ? `Cobrado ${r.gross.toFixed(2)} · comisión ML ${r.fee.toFixed(2)} · neto ${r.net.toFixed(2)}` : "",
       r.months === null ? "Vigencia no indicada: se asumió 1 año." : "",
+      !r.ok && r.status ? `Estado en Mercado Libre: ${r.status} (importada a mano).` : "",
       r.extra,
     ]
       .filter(Boolean)

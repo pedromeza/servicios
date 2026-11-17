@@ -2,7 +2,7 @@
 
 import { AlertTriangle, CheckCircle2, FileSpreadsheet, Upload } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
-import { commitMlImport, previewMlImport, type MlImportResult, type MlPreviewState } from "@/lib/actions";
+import { commitMlImport, previewMlImport, type MlImportResult, type MlPreviewRow, type MlPreviewState } from "@/lib/actions";
 import { addMonthsISO, fmtDate, fmtMoney } from "@/lib/format";
 import { termLabel } from "@/lib/terms";
 import { Badge } from "@/components/ui/Badge";
@@ -16,23 +16,47 @@ export function ImportManager() {
   const [result, commit, committing] = useActionState<MlImportResult | null, FormData>(commitMlImport, null);
   const [fileName, setFileName] = useState("");
   const [includeSimilar, setIncludeSimilar] = useState(false);
-
+  // Selección manual. Por defecto entran las válidas; las canceladas/reembolsadas o
+  // "ya existe a mano" se pueden marcar a mano. Los cambios se guardan junto con la
+  // referencia del análisis al que pertenecen, así un análisis nuevo empieza limpio.
+  const keyOf = (r: MlPreviewRow) => r.sale_id || `${r.buyer}|${r.date}|${r.title}`;
+  const [overrides, setOverrides] = useState<{ for: MlPreviewState; keys: Set<string> }>({ for: null, keys: new Set() });
+  const flipped = overrides.for === preview ? overrides.keys : new Set<string>();
   const rows = useMemo(() => (preview?.ok ? preview.rows : []), [preview]);
+  const selectable = (r: MlPreviewRow) => !r.imported;
+  const byDefault = (r: MlPreviewRow) => r.ok && !r.imported && (includeSimilar || !r.similar);
+  const isChecked = (r: MlPreviewRow) => selectable(r) && byDefault(r) !== flipped.has(keyOf(r));
+  const chosen = useMemo(
+    () => rows.filter(isChecked).map((r) => ({ ...r, force: !byDefault(r) })),
+    [rows, flipped, includeSimilar], // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const stats = useMemo(() => {
     const valid = rows.filter((r) => r.ok);
     const similar = valid.filter((r) => !r.imported && r.similar).length;
     return {
       total: rows.length,
-      toCreate: valid.filter((r) => !r.imported && (includeSimilar || !r.similar)).length,
+      toCreate: chosen.length,
+      forced: chosen.filter((r) => r.force).length,
+      selectable: rows.filter(selectable).length,
       imported: valid.filter((r) => r.imported).length,
       similar,
       invalid: rows.length - valid.length,
       noYears: valid.filter((r) => r.months === null && !r.imported).length,
       noSaleId: valid.filter((r) => !r.sale_id && !r.imported).length,
       newClients: new Set(valid.filter((r) => !r.imported && !r.client_exists).map((r) => r.buyer.toLowerCase())).size,
-      amount: valid.filter((r) => !r.imported && (includeSimilar || !r.similar)).reduce((n, r) => n + r.unit_price * r.units, 0),
+      amount: chosen.reduce((n, r) => n + r.unit_price * r.units, 0),
     };
-  }, [rows, includeSimilar]);
+  }, [rows, chosen]);
+  const toggleRow = (r: MlPreviewRow) => {
+    const k = keyOf(r);
+    const n = new Set(flipped);
+    if (n.has(k)) n.delete(k);
+    else n.add(k);
+    setOverrides({ for: preview, keys: n });
+  };
+  const allSelected = stats.selectable > 0 && chosen.length === stats.selectable;
+  // Marcar todas = invertir las que por defecto no entran; desmarcar todas = invertir las que sí.
+  const toggleAll = () => setOverrides({ for: preview, keys: new Set(rows.filter((r) => selectable(r) && byDefault(r) === allSelected).map(keyOf)) });
 
   return (
     <>
@@ -68,7 +92,7 @@ export function ImportManager() {
             description={`${preview.format === "ml" ? "Reporte de Mercado Libre" : "Hoja de captura"} · ${stats.total} ventas en “${preview.sheet}” · ${stats.toCreate} por importar · ${stats.imported} ya importadas · ${stats.similar} ya registradas a mano · ${stats.invalid} canceladas o reembolsadas (se omiten)`}
           />
           <form action={commit} className="space-y-4 px-5 py-4">
-            <input type="hidden" name="rows" value={JSON.stringify(rows)} />
+            <input type="hidden" name="rows" value={JSON.stringify(chosen)} />
             {stats.similar > 0 && (
               <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 <input type="checkbox" name="include_similar" checked={includeSimilar} onChange={(ev) => setIncludeSimilar(ev.target.checked)} className="mt-0.5 accent-brand" />
@@ -122,7 +146,11 @@ export function ImportManager() {
                 )}
               </div>
             )}
-            <div className="flex justify-end">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-slate-500">
+                {stats.toCreate} de {stats.selectable} seleccionadas. Desmarca en la tabla las que no quieras subir; también puedes marcar una cancelada o reembolsada si sí se entregó.
+                {stats.forced > 0 ? ` ${stats.forced} marcada${stats.forced === 1 ? "" : "s"} a mano.` : ""}
+              </p>
               <Button type="submit" disabled={committing || preview.migrationPending || stats.toCreate === 0}>
                 <Upload size={15} /> {committing ? "Importando…" : `Importar ${stats.toCreate} venta${stats.toCreate === 1 ? "" : "s"}`}
               </Button>
@@ -132,6 +160,15 @@ export function ImportManager() {
           <Table>
             <thead className="border-b border-navy-100">
               <tr>
+                <Th className="w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Seleccionar todas"
+                    className="accent-brand"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                  />
+                </Th>
                 <Th>Fecha</Th>
                 <Th>Comprador</Th>
                 <Th>Programas</Th>
@@ -144,10 +181,23 @@ export function ImportManager() {
             </thead>
             <tbody className="divide-y divide-navy-100">
               {rows.map((r) => (
-                <tr key={r.sale_id || `${r.buyer}-${r.date}-${r.title}`} className={!r.ok ? "bg-red-50/40 text-slate-400" : r.imported || (r.similar && !includeSimilar) ? "text-slate-400" : ""}>
+                <tr
+                  key={keyOf(r)}
+                  className={isChecked(r) ? (r.ok ? "" : "bg-amber-50/40") : !r.ok ? "bg-red-50/40 text-slate-400" : "text-slate-400"}
+                >
+                  <Td>
+                    <input
+                      type="checkbox"
+                      aria-label={`Importar ${r.buyer}`}
+                      className="accent-brand"
+                      disabled={!selectable(r)}
+                      checked={isChecked(r)}
+                      onChange={() => toggleRow(r)}
+                    />
+                  </Td>
                   <Td className="whitespace-nowrap">{fmtDate(r.date)}</Td>
                   <Td>
-                    <div className={r.ok && !r.imported ? "font-medium text-navy-900" : ""}>{r.buyer}</div>
+                    <div className={isChecked(r) ? "font-medium text-navy-900" : ""}>{r.buyer}</div>
                     <div className="text-xs text-slate-400">
                       {r.sale_id ? `#${r.sale_id}` : "sin # de venta"}
                       {r.client_exists ? " · cliente existente" : ""}
@@ -165,16 +215,20 @@ export function ImportManager() {
                   <Td className="whitespace-nowrap">{r.renews_at ? fmtDate(r.renews_at) : r.date && (r.months ?? 12) > 0 ? fmtDate(addMonthsISO(r.date, r.months ?? 12)) : "—"}</Td>
                   <Td className="whitespace-nowrap text-right">{fmtMoney(r.unit_price * r.units)}{r.units > 1 ? ` (${r.units} u.)` : ""}</Td>
                   <Td>
-                    {!r.ok ? (
-                      <Badge tone="danger">{r.status}</Badge>
-                    ) : r.imported ? (
+                    {r.imported ? (
                       <Badge>Ya importada</Badge>
-                    ) : r.similar && !includeSimilar ? (
+                    ) : isChecked(r) ? (
+                      <span title={!r.ok ? `Estado en ML: ${r.status}` : r.similar ?? undefined}>
+                        <Badge tone={r.ok && !r.similar ? "success" : "warning"}>{r.ok && !r.similar ? "Se importará" : "Se importará (marcada a mano)"}</Badge>
+                      </span>
+                    ) : !r.ok ? (
+                      <Badge tone="danger">{r.status}</Badge>
+                    ) : r.similar ? (
                       <span title={r.similar}>
                         <Badge tone="warning">Ya existe (a mano)</Badge>
                       </span>
                     ) : (
-                      <Badge tone="success">Se importará</Badge>
+                      <Badge>Sin marcar</Badge>
                     )}
                   </Td>
                 </tr>
