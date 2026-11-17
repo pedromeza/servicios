@@ -601,7 +601,7 @@ export async function salesLedger(): Promise<LedgerRow[]> {
   const subById = new Map(subs.map((s) => [s.id, s]));
   const rows: LedgerRow[] = [];
   for (const s of subs) {
-    if (!s.purchased_at) continue;
+    if (!s.purchased_at || (s.price <= 0 && s.cost <= 0)) continue; // sin monto no hay nada que contar
     rows.push({
       key: `sub:${s.id}`,
       kind: "subscription",

@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, Layers, Pencil, Plus, RefreshCw, Trash2, Undo2 } from "lucide-react";
+import { AlertTriangle, History, Layers, Pencil, Plus, RefreshCw, Trash2, Undo2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useState, useTransition } from "react";
-import { deleteSubscription, markGenericAsSuite, purgeSubscription, restoreSubscription, setSubscriptionStatus } from "@/lib/actions";
+import { useState, useTransition } from "react";
+import { deleteSubscription, markAsRenewal, markGenericAsSuite, purgeSubscription, restoreSubscription, setSubscriptionStatus } from "@/lib/actions";
 import type { RenewalMoney } from "@/lib/types";
 import { RenewDialog } from "./RenewDialog";
 import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
@@ -12,6 +12,7 @@ import { SUB_PLANS, SUB_STATUS, type Option, type Subscription } from "@/lib/typ
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
+import { Field, Input } from "@/components/ui/Fields";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { Pagination } from "@/components/ui/Pagination";
@@ -38,6 +39,21 @@ export function SubscriptionsManager({
   genericCount?: number;
 }) {
   const [bulkSuite, setBulkSuite] = useState(false);
+  // Selección para acciones en bloque (solo fuera de la papelera).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [asRenewal, setAsRenewal] = useState(false);
+  const [originalDate, setOriginalDate] = useState("");
+  const [renewalError, setRenewalError] = useState<string | null>(null);
+  const toggleSel = (id: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const pageIds = subscriptions.map((s) => s.id);
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const chosen = subscriptions.filter((s) => selected.has(s.id));
   const [editing, setEditing] = useState<Subscription | "new" | null>(null);
   const [deleting, setDeleting] = useState<Subscription | null>(null);
   const [renewing, setRenewing] = useState<Subscription | null>(null);
@@ -49,8 +65,9 @@ export function SubscriptionsManager({
     setNonce((n) => n + 1);
     setEditing(s);
   };
-  const close = useCallback(() => setEditing(null), []);
-  const closeRenew = useCallback(() => setRenewing(null), []);
+  // Sin useCallback: el compilador de React memoriza solo y así no se queja al añadir estado nuevo.
+  const close = () => setEditing(null);
+  const closeRenew = () => setRenewing(null);
 
   return (
     <>
@@ -86,6 +103,63 @@ export function SubscriptionsManager({
           </Button>
         </div>
       )}
+      {selected.size > 0 && !inTrash && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-navy-200 bg-navy-50 px-4 py-3 text-sm text-navy-900">
+          <span>
+            <strong>{selected.size} seleccionada{selected.size === 1 ? "" : "s"}</strong>. Si la fecha de compra que tienen es en realidad la de su última renovación, corrígelas aquí.
+          </span>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setSelected(new Set())}>
+              Quitar selección
+            </Button>
+            <Button size="sm" onClick={() => { setRenewalError(null); setAsRenewal(true); }} disabled={pending}>
+              <History size={14} /> Fue renovación, la venta fue antes
+            </Button>
+          </div>
+        </div>
+      )}
+      <Dialog open={asRenewal} onClose={() => setAsRenewal(false)} title="Fue renovación, la venta fue antes" description={`${chosen.length} suscripci${chosen.length === 1 ? "ón" : "ones"} seleccionada${chosen.length === 1 ? "" : "s"}.`}>
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            La fecha de compra actual pasará a ser una <strong>renovación</strong> (con el precio y costo que tiene la suscripción), y la <strong>venta</strong> se moverá a la fecha que indiques. Así en Ventas cuenta una venta en esa fecha y una renovación en la actual. Las que ya tengan fecha de compra anterior o igual no cambian.
+          </p>
+          <Field label="Fecha de la venta original" hint="Si no la sabes exacta, pon el mismo día y mes del año anterior.">
+            <Input type="date" value={originalDate} onChange={(ev) => setOriginalDate(ev.target.value)} />
+          </Field>
+          {chosen.length > 0 && (
+            <ul className="max-h-40 overflow-y-auto rounded-lg border border-navy-100 text-xs text-slate-600">
+              {chosen.map((s) => (
+                <li key={s.id} className="flex justify-between gap-2 px-3 py-1.5">
+                  <span className="truncate">{s.client_name ?? "Sin cliente"} · {s.products.join(", ")}</span>
+                  <span className="whitespace-nowrap">compra {fmtDate(s.purchased_at)} · {fmtMoney(s.price, s.currency)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {renewalError && <p className="text-sm text-red-600">{renewalError}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setAsRenewal(false)}>
+              Cancelar
+            </Button>
+            <Button
+              disabled={pending || !originalDate}
+              onClick={() =>
+                start(async () => {
+                  const res = await markAsRenewal([...selected], originalDate);
+                  if (!res.ok) {
+                    setRenewalError(res.error ?? "No se pudo aplicar.");
+                    return;
+                  }
+                  setAsRenewal(false);
+                  setSelected(new Set());
+                })
+              }
+            >
+              {pending ? "Aplicando…" : `Aplicar a ${chosen.length}`}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
       <ConfirmDialog
         open={bulkSuite}
         onClose={() => setBulkSuite(false)}
@@ -122,6 +196,26 @@ export function SubscriptionsManager({
           <Table>
             <thead className="border-b border-navy-100">
               <tr>
+                {!inTrash && (
+                  <Th className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label="Seleccionar las de esta página"
+                      className="accent-brand"
+                      checked={allOnPage}
+                      onChange={() =>
+                        setSelected((s) => {
+                          const n = new Set(s);
+                          for (const id of pageIds) {
+                            if (allOnPage) n.delete(id);
+                            else n.add(id);
+                          }
+                          return n;
+                        })
+                      }
+                    />
+                  </Th>
+                )}
                 <Th>Cliente</Th>
                 <Th>Cuenta</Th>
                 <Th>Programas</Th>
@@ -137,7 +231,12 @@ export function SubscriptionsManager({
                 const days = daysUntil(s.renews_at);
                 const t = renewalTone(days);
                 return (
-                  <tr key={s.id} className={`group hover:bg-navy-50/60 ${s.deleted_at ? "bg-slate-50 text-slate-400" : ""}`}>
+                  <tr key={s.id} className={`group hover:bg-navy-50/60 ${s.deleted_at ? "bg-slate-50 text-slate-400" : selected.has(s.id) ? "bg-brand-light/40" : ""}`}>
+                    {!inTrash && (
+                      <Td>
+                        <input type="checkbox" aria-label={`Seleccionar ${s.client_name ?? "suscripción"}`} className="accent-brand" checked={selected.has(s.id)} onChange={() => toggleSel(s.id)} />
+                      </Td>
+                    )}
                     <Td>
                       <div className={`font-medium ${s.deleted_at ? "text-slate-500 line-through decoration-slate-300" : "text-navy-900"}`}>
                         {s.client_name ?? <span className="font-normal text-slate-400">—</span>}

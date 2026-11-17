@@ -458,6 +458,42 @@ export async function purgeSubscription(id: string): Promise<ActionState> {
   return purgeRow("subscriptions", id, "products");
 }
 
+/**
+ * "Fue renovación": la fecha de compra que tiene la suscripción es en realidad la de su última
+ * renovación. Se mueve la venta a `original_date` y se registra una renovación con la fecha y el
+ * precio actuales, para que en Ventas cuente una venta (antes) y una renovación (ahora).
+ */
+export async function markAsRenewal(ids: string[], original_date: string): Promise<ActionState & { count?: number }> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(original_date)) return { ok: false, error: "Indica la fecha de la venta original." };
+  const clean = ids.filter((id) => z.uuid().safeParse(id).success).slice(0, 500);
+  if (clean.length === 0) return { ok: false, error: "No hay suscripciones seleccionadas." };
+  const { supabase } = await requireUser();
+  const res = await supabase.from("subscriptions").select("id,purchased_at,renews_at,price,cost,currency,plan,products,renewals").in("id", clean).is("deleted_at", null);
+  if (res.error) return { ok: false, error: res.error.message };
+  let count = 0;
+  for (const s of (res.data ?? []) as { id: string; purchased_at: string | null; renews_at: string | null; price: number; cost: number; currency: string | null; plan: string | null; products: string[] | null; renewals: number | null }[]) {
+    if (!s.purchased_at || s.purchased_at <= original_date) continue; // ya está antes o igual: no hay nada que mover
+    const eventRow = {
+      subscription_id: s.id,
+      renewed_at: s.purchased_at,
+      amount: Number(s.price ?? 0),
+      cost: Number(s.cost ?? 0),
+      currency: s.currency ?? "MXN",
+      from_date: s.purchased_at,
+      to_date: s.renews_at,
+    };
+    let ev = await supabase.from("renewal_events").insert({ ...eventRow, plan: s.plan ?? "individual", products: s.products ?? [] });
+    if (ev.error && /plan|products|schema cache/i.test(ev.error.message)) ev = await supabase.from("renewal_events").insert(eventRow);
+    if (ev.error) return { ok: false, error: ev.error.message, count };
+    const upd = await supabase.from("subscriptions").update({ purchased_at: original_date, renewals: Number(s.renewals ?? 0) + 1 }).eq("id", s.id);
+    if (upd.error) return { ok: false, error: upd.error.message, count };
+    await audit(supabase, "renew", "subscription", s.id, `Fue renovación: venta movida al ${original_date}, renovación registrada el ${s.purchased_at} por ${fmtMoney(Number(s.price ?? 0), s.currency ?? "MXN")}`);
+    count += 1;
+  }
+  refresh();
+  return { ok: true, count };
+}
+
 export async function setSubscriptionStatus(id: string, status: "active" | "expired" | "not_renewed" | "cancelled"): Promise<ActionState> {
   const { supabase } = await requireUser();
   const { error } = await supabase.from("subscriptions").update({ status }).eq("id", id);
