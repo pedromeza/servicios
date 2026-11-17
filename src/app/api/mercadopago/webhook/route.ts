@@ -73,7 +73,11 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ ok: true, registered: detail });
 }
 
-/** Mercado Pago a veces prueba la URL con GET. */
+/** Mercado Pago a veces prueba la URL con GET. También sirve para comprobar a simple vista si el token ya está puesto. */
 export async function GET() {
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    mercado_pago: mpConfigured() ? "conectado" : "falta MP_ACCESS_TOKEN en Vercel (o falta el redeploy)",
+    firma_webhook: process.env.MP_WEBHOOK_SECRET ? "activada" : "sin MP_WEBHOOK_SECRET (opcional)",
+  });
 }
