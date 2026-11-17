@@ -9,6 +9,19 @@ export const dynamic = "force-dynamic";
 
 type Link = { concept: string; amount: number; currency: string; status: "pending" | "paid" | "cancelled"; url: string | null; expired: boolean };
 
+/** El botón de pago solo puede llevar a Mercado Pago por https: nunca a otro sitio ni a un enlace de script. */
+function safePayUrl(raw: string | null): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    const host = u.hostname.toLowerCase();
+    const allowed = /(^|\.)mercadopago\.com(\.[a-z]{2})?$/.test(host) || /(^|\.)mercadolibre\.com(\.[a-z]{2})?$/.test(host) || /(^|\.)mercadopago\.cl$/.test(host);
+    return u.protocol === "https:" && allowed ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Solo lo necesario para mostrar el cobro. El id es un UUID que nadie puede adivinar. */
 async function loadLink(id: string): Promise<Link | null> {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
@@ -17,7 +30,7 @@ async function loadLink(id: string): Promise<Link | null> {
     const { data } = await db.from("payment_links").select("concept,amount,currency,status,url,created_at").eq("id", id).maybeSingle();
     if (!data) return null;
     const expired = data.status === "pending" && new Date(data.created_at).getTime() + LINK_DAYS * 86_400_000 < Date.now();
-    return { concept: data.concept, amount: Number(data.amount ?? 0), currency: data.currency ?? "MXN", status: data.status, url: data.url ?? null, expired };
+    return { concept: data.concept, amount: Number(data.amount ?? 0), currency: data.currency ?? "MXN", status: data.status, url: safePayUrl(data.url ?? null), expired };
   } catch {
     return null;
   }

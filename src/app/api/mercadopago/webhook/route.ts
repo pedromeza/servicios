@@ -18,6 +18,8 @@ export async function POST(req: NextRequest) {
   const topic = body.type ?? sp.get("type") ?? sp.get("topic") ?? "";
   const paymentId = String(body.data?.id ?? sp.get("data.id") ?? sp.get("id") ?? "");
   if (!/payment/i.test(topic) || !paymentId) return NextResponse.json({ ok: true, ignored: topic || "sin tipo" });
+  // Un id de pago de Mercado Pago es solo dígitos: cualquier otra cosa se descarta sin consultar nada.
+  if (!/^\d{5,20}$/.test(paymentId)) return NextResponse.json({ ok: true, ignored: "id de pago inválido" });
   // Un aviso firmado con firma incorrecta se rechaza. Los avisos sin firma (formato IPN) se aceptan porque
   // el pago se consulta a Mercado Pago más abajo: un aviso falso no puede inventar un pago aprobado.
   if (req.headers.get("x-signature") && !verifyWebhookSignature(req.headers, paymentId)) return NextResponse.json({ ok: false, reason: "firma inválida" }, { status: 401 });
@@ -45,6 +47,14 @@ export async function POST(req: NextRequest) {
   const paidAt = payment.date_approved ?? new Date().toISOString();
   const amount = Number(payment.transaction_amount ?? link.amount);
   const currency = payment.currency_id ?? link.currency;
+  // El pago debe cubrir lo que pedía el link, en la misma moneda. Si no, no se registra nada y queda anotado para revisarlo.
+  if (amount + 0.01 < Number(link.amount) || currency !== link.currency) {
+    await db
+      .from("audit_log")
+      .insert({ user_id: link.user_id, action: "update", entity: "payment_link", entity_id: link.id, detail: `Pago ${payment.id} NO registrado: llegó ${fmtMoney(amount, currency)} y el link pedía ${fmtMoney(Number(link.amount), link.currency)}`.slice(0, 200), actor_email: "Mercado Pago" })
+      .then(() => undefined, () => undefined);
+    return NextResponse.json({ ok: false, reason: "el monto o la moneda no coinciden con el link" });
+  }
 
   // Marcar el link como pagado primero (mp_payment_id es único: evita registrar dos veces el mismo pago).
   // Solo sigue quien logra marcarlo: si dos avisos llegan a la vez, el segundo no encuentra fila y termina.
