@@ -16,6 +16,7 @@ import { Field, Input } from "@/components/ui/Fields";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { Pagination } from "@/components/ui/Pagination";
+import { PayLinkButton } from "@/components/ui/PayLinkButton";
 import type { Page } from "@/lib/paging";
 import { productsText } from "@/lib/products";
 import { SubscriptionForm } from "./SubscriptionForm";
@@ -28,6 +29,7 @@ export function SubscriptionsManager({
   accounts,
   clients,
   genericCount = 0,
+  mpReady = false,
 }: {
   subscriptions: Subscription[];
   paging: Page;
@@ -37,6 +39,8 @@ export function SubscriptionsManager({
   clients: Option[];
   /** Suscripciones activas con solo “Autodesk (sin especificar)” como producto individual. */
   genericCount?: number;
+  /** Mercado Pago conectado: se muestra el botón de link de pago en cada fila. */
+  mpReady?: boolean;
 }) {
   const [bulkSuite, setBulkSuite] = useState(false);
   // Selección para acciones en bloque (solo fuera de la papelera).
@@ -223,7 +227,7 @@ export function SubscriptionsManager({
                 <Th>Renueva</Th>
                 <Th className="text-right">Costo / Venta</Th>
                 <Th>Estado</Th>
-                <Th className="w-32" />
+                <Th className="w-40" />
               </tr>
             </thead>
             <tbody className="divide-y divide-navy-100">
@@ -322,6 +326,13 @@ export function SubscriptionsManager({
                         </div>
                       ) : (
                         <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
+                          {mpReady && s.price > 0 && (
+                            <PayLinkButton
+                              iconOnly
+                              subscriptionId={s.id}
+                              waIntro={`Hola ${s.client_name ?? ""}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(s.plan, s.products, s.account_provider)}`}
+                            />
+                          )}
                           <Button size="icon" variant="ghost" aria-label="Renovar" title="Renovar un periodo más (suma un sello de lealtad)" onClick={() => setRenewing(s)}>
                             <RefreshCw size={15} />
                           </Button>

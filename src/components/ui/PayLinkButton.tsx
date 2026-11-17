@@ -21,6 +21,7 @@ export function PayLinkButton({
   waIntro,
   size = "sm",
   label = "Link de pago",
+  iconOnly = false,
   className,
 }: {
   subscriptionId?: string;
@@ -31,6 +32,7 @@ export function PayLinkButton({
   waIntro?: string; // mensaje antes del link
   size?: "sm" | "md";
   label?: string;
+  iconOnly?: boolean; // solo el ícono, para filas de tabla
   className?: string;
 }) {
   const [result, setResult] = useState<PayLinkResult | null>(null);
@@ -57,9 +59,15 @@ export function PayLinkButton({
 
   return (
     <>
-      <Button size={size} variant="secondary" onClick={generate} disabled={pending} className={className} title="Generar link de pago de Mercado Pago">
-        <CreditCard size={size === "sm" ? 13 : 15} /> {pending ? "Generando…" : label}
-      </Button>
+      {iconOnly ? (
+        <Button size="icon" variant="ghost" onClick={generate} disabled={pending} className={className} aria-label="Link de pago" title="Generar link de pago de Mercado Pago">
+          <CreditCard size={15} className={pending ? "animate-pulse" : ""} />
+        </Button>
+      ) : (
+        <Button size={size} variant="secondary" onClick={generate} disabled={pending} className={className} title="Generar link de pago de Mercado Pago">
+          <CreditCard size={size === "sm" ? 13 : 15} /> {pending ? "Generando…" : label}
+        </Button>
+      )}
       <Dialog open={open} onClose={() => setOpen(false)} title="Link de pago" description={result?.ok ? `${result.concept} · ${fmtMoney(result.amount ?? 0)}` : undefined}>
         {result?.ok && result.url ? (
           <div className="space-y-4">
