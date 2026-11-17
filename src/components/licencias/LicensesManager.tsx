@@ -4,7 +4,7 @@ import { CheckCircle2, KeyRound, Pencil, Plus, Ticket, Trash2, Undo2, UserRound 
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { deleteLicense, purgeLicense, restoreLicense, toggleLicenseUsed } from "@/lib/actions";
-import { daysUntil, fmtDate, fmtDateTime } from "@/lib/format";
+import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
 import { LICENSE_KINDS, LICENSE_STATUS, LICENSE_TERMS, type License, type Option } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -97,6 +97,13 @@ export function LicensesManager({
                       {l.kind === "account" ? <UserRound size={11} /> : <KeyRound size={11} />}
                       {l.kind === "account" ? `Cuenta · ${l.seat_assignments.length} de ${l.seats} puesto${l.seats === 1 ? "" : "s"}` : "Clave de producto"}
                     </div>
+                    {l.price > 0 && (
+                      <div className="mt-0.5 text-xs text-slate-500">
+                        Vendida en <span className="font-medium text-navy-900">{fmtMoney(l.price, l.currency)}</span>
+                        {l.cost > 0 ? ` · costó ${fmtMoney(l.cost, l.currency)}` : ""}
+                        {l.platform ? ` · ${l.platform}` : ""}
+                      </div>
+                    )}
                     {l.notes && <div className="mt-0.5 max-w-xs truncate text-xs text-slate-400">{l.notes}</div>}
                   </Td>
                   <Td>

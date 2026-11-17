@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUpRight, CalendarClock, KeyRound, RefreshCw, Ticket, TrendingUp, Wallet } from "lucide-react";
+import { AlertTriangle, ArrowUpRight, CalendarClock, KeyRound, RefreshCw, ShoppingCart, Ticket, TrendingUp, Wallet } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
@@ -54,7 +54,10 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat icon={<Wallet size={20} />} label="Cobrado en ventas" value={fmtMoney(d.money.sales)} sub="Precio original de cada suscripción" />
+        <Link href="/ventas" className="block">
+          <Stat icon={<ShoppingCart size={20} />} label="Ventas del mes" value={fmtMoney(d.month.price)} sub={`${d.month.count} venta${d.month.count === 1 ? "" : "s"} · ganancia ${fmtMoney(d.month.price - d.month.cost)} · ver todas`} accent={d.month.count > 0} />
+        </Link>
+        <Stat icon={<Wallet size={20} />} label="Cobrado en suscripciones" value={fmtMoney(d.money.sales)} sub="Precio original de cada suscripción" />
         <Stat
           icon={<RefreshCw size={20} />}
           label="Cobrado en renovaciones"

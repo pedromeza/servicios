@@ -1,0 +1,66 @@
+import ExcelJS from "exceljs";
+import { NextResponse, type NextRequest } from "next/server";
+import { requireUser } from "@/lib/auth";
+import { salesLedger } from "@/lib/data";
+import { filterLedger } from "@/lib/ledger";
+import { SALE_KINDS } from "@/lib/types";
+
+export const dynamic = "force-dynamic";
+
+/** Descarga el libro de ventas (con los mismos filtros de la página) como .xlsx. */
+export async function GET(req: NextRequest) {
+  try {
+    await requireUser();
+  } catch {
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  }
+  const sp = req.nextUrl.searchParams;
+  const get = (k: string) => sp.get(k) ?? "";
+  const rows = filterLedger(await salesLedger(), { q: get("q"), tipo: get("tipo"), mes: get("mes"), plataforma: get("plataforma") });
+
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("Ventas");
+  ws.columns = [
+    { header: "Fecha", key: "date", width: 12 },
+    { header: "Cliente", key: "client", width: 30 },
+    { header: "Concepto", key: "concept", width: 36 },
+    { header: "Detalle", key: "detail", width: 36 },
+    { header: "Tipo", key: "kind", width: 14 },
+    { header: "Plataforma", key: "platform", width: 16 },
+    { header: "Costo", key: "cost", width: 12 },
+    { header: "Venta", key: "price", width: 12 },
+    { header: "Ganancia", key: "profit", width: 12 },
+    { header: "Moneda", key: "currency", width: 8 },
+  ];
+  ws.getRow(1).font = { bold: true };
+  for (const r of rows) {
+    ws.addRow({
+      date: r.date,
+      client: r.client_name ?? "",
+      concept: r.concept,
+      detail: r.detail,
+      kind: SALE_KINDS[r.kind],
+      platform: r.platform ?? "",
+      cost: r.cost,
+      price: r.price,
+      profit: r.price - r.cost,
+      currency: r.currency,
+    });
+  }
+  const last = rows.length + 2;
+  ws.getCell(`F${last}`).value = "Total";
+  ws.getCell(`F${last}`).font = { bold: true };
+  ws.getCell(`G${last}`).value = { formula: `SUM(G2:G${last - 1})` };
+  ws.getCell(`H${last}`).value = { formula: `SUM(H2:H${last - 1})` };
+  ws.getCell(`I${last}`).value = { formula: `SUM(I2:I${last - 1})` };
+  for (const col of ["G", "H", "I"]) ws.getColumn(col).numFmt = "#,##0.00";
+
+  const buf = await wb.xlsx.writeBuffer();
+  const name = `ventas${get("mes") ? `-${get("mes")}` : ""}.xlsx`;
+  return new NextResponse(buf as ArrayBuffer, {
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${name}"`,
+    },
+  });
+}

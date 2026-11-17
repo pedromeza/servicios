@@ -33,17 +33,45 @@ export const PRODUCTS_BY_PROVIDER: Record<Provider, string[]> = {
 };
 
 export const LICENSE_PRODUCTS = [
+  // Microsoft
   "Windows 11 Pro",
   "Windows 11 Home",
   "Windows 10 Pro",
   "Windows 10 Home",
   "Windows Server 2022",
+  "Windows Server 2025",
   "Office 2021 Professional Plus",
   "Office 2024 Professional Plus",
   "Office 2019 Professional Plus",
+  "Office 2021 Hogar y Empresas (Mac)",
+  "Microsoft 365 Personal",
+  "Microsoft 365 Familia",
+  "Microsoft 365 Empresa",
   "Visio Professional",
   "Project Professional",
+  // Antivirus
+  "Kaspersky Standard",
+  "Kaspersky Plus",
+  "Kaspersky Premium",
+  "ESET NOD32 Antivirus",
+  "ESET Internet Security",
+  "Norton 360 Deluxe",
+  "McAfee Total Protection",
+  "Bitdefender Total Security",
+  "Avast Premium Security",
+  // Adobe y otros
+  "Adobe Acrobat Pro",
+  "Adobe Creative Cloud",
+  "Adobe Photoshop",
+  "CorelDRAW Graphics Suite",
+  "SketchUp Pro",
+  "Autodesk AutoCAD LT",
+  "Google Workspace",
+  "Canva Pro",
 ];
+
+/** Dónde se hizo una venta (mismas opciones que la plataforma del cliente). */
+export const SALE_PLATFORMS = ["Mercado Libre", "WhatsApp", "Facebook", "Instagram", "Directo", "Recomendación", "Otra"] as const;
 
 export const ACCOUNT_ROLES = { admin: "Administrador", user: "Usuario" } as const;
 export type AccountRole = keyof typeof ACCOUNT_ROLES;
@@ -158,10 +186,52 @@ export type License = {
   client_id: string | null;
   client_name: string | null;
   used_at: string | null;
+  price: number; // lo vendiste en
+  cost: number; // te costó
+  currency: string;
+  platform: string | null; // por dónde se vendió
   notes: string | null;
   created_at: string;
   deleted_at: string | null;
 };
+
+/** Venta suelta: lo que no es licencia ni suscripción (servicio, instalación, hardware…). */
+export type Sale = {
+  id: string;
+  client_id: string | null;
+  client_name: string | null;
+  concept: string;
+  sold_at: string;
+  price: number;
+  cost: number;
+  currency: string;
+  platform: string | null;
+  notes: string | null;
+  created_at: string;
+  deleted_at: string | null;
+};
+
+export const SALE_KINDS = { subscription: "Suscripción", renewal: "Renovación", license: "Licencia", other: "Otra venta" } as const;
+export type SaleKind = keyof typeof SALE_KINDS;
+
+/** Un renglón del libro de ventas: todo lo cobrado, venga de donde venga. */
+export type LedgerRow = {
+  key: string;
+  kind: SaleKind;
+  ref_id: string; // id de la suscripción, licencia o venta
+  date: string; // YYYY-MM-DD
+  client_id: string | null;
+  client_name: string | null;
+  concept: string;
+  detail: string;
+  platform: string | null;
+  price: number;
+  cost: number;
+  currency: string;
+  href: string; // a dónde lleva el renglón
+};
+
+export type LedgerMonth = { month: string; label: string; count: number; price: number; cost: number };
 
 export type ReminderCandidate = {
   subscription_id: string;
@@ -238,6 +308,7 @@ export type DashboardData = {
   cost: number;
   profit: number;
   money: RenewalMoney;
+  month: { count: number; price: number; cost: number }; // ventas del mes en curso (todo el libro de ventas)
   upcoming: Subscription[];
   licensesByProduct: { product: string; available: number; used: number }[];
   accountsByProvider: { provider: string; count: number }[];

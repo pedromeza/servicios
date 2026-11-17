@@ -6,11 +6,13 @@ import { quickCreateClient, saveLicense, type ActionState } from "@/lib/actions"
 import { ComboSelect } from "@/components/ui/ComboSelect";
 import { addYearsISO, fmtDate, todayISO } from "@/lib/format";
 import {
+  CURRENCIES,
   LICENSE_KINDS,
   LICENSE_PRODUCTS,
   LICENSE_STATUS,
   LICENSE_TERMS,
   MAX_LICENSE_SEATS,
+  SALE_PLATFORMS,
   type License,
   type Option,
 } from "@/lib/types";
@@ -50,6 +52,9 @@ export function LicenseForm({
     (license?.seat_assignments ?? []).map((s, i) => ({ key: i, email: s.email ?? "", client_id: s.client_id ?? "" })),
   );
   const [show, setShow] = useState(false);
+  const [currency, setCurrency] = useState<string>(license?.currency ?? "MXN");
+  const [platform, setPlatform] = useState<string>(license?.platform ?? "");
+  const [platformList, setPlatformList] = useState<string[]>(() => Array.from(new Set([...SALE_PLATFORMS, ...(license?.platform ? [license.platform] : [])])));
   useEffect(() => {
     if (state?.ok) onDone();
   }, [state, onDone]);
@@ -234,6 +239,33 @@ export function LicenseForm({
             placeholder="Buscar cliente…"
             createLabel="Crear cliente"
             onCreate={createClient}
+          />
+        </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-4">
+        <Field label="Te costó" error={e.cost}>
+          <Input name="cost" type="number" step="0.01" min={0} defaultValue={license?.cost || ""} placeholder="0.00" />
+        </Field>
+        <Field label="Lo vendiste en" error={e.price} hint="Con precio cuenta en Ventas.">
+          <Input name="price" type="number" step="0.01" min={0} defaultValue={license?.price || ""} placeholder="0.00" />
+        </Field>
+        <Field label="Moneda" error={e.currency}>
+          <ComboSelect name="currency" value={currency} onChange={setCurrency} options={CURRENCIES.map((c) => ({ value: c, label: c }))} placeholder="Moneda" />
+        </Field>
+        <Field label="Plataforma" error={e.platform}>
+          <ComboSelect
+            name="platform"
+            value={platform}
+            onChange={setPlatform}
+            options={platformList.map((p) => ({ value: p, label: p }))}
+            emptyLabel="Sin especificar"
+            placeholder="Por dónde se vendió…"
+            createLabel="Agregar"
+            onCreate={(label) => {
+              setPlatformList((l) => (l.includes(label) ? l : [...l, label]));
+              return { value: label, label };
+            }}
           />
         </Field>
       </div>

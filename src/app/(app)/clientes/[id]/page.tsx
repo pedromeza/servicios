@@ -1,4 +1,4 @@
-import { ArrowLeft, BellRing, Check, Gift, KeyRound, MessageCircle, RefreshCw, Ticket } from "lucide-react";
+import { ArrowLeft, BellRing, Check, Gift, KeyRound, MessageCircle, RefreshCw, ShoppingCart, Ticket } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -18,7 +18,9 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
   const { id } = await params;
   const data = await getClient(id);
   if (!data) notFound();
-  const { client: c, subscriptions, licenses, card, reminders, renewalEvents, money, settings, phone } = data;
+  const { client: c, subscriptions, licenses, otherSales, card, reminders, renewalEvents, money, settings, phone } = data;
+  const licenseSales = licenses.filter((l) => l.client_id === id).reduce((n, l) => n + l.price, 0);
+  const otherTotal = otherSales.reduce((n, s) => n + s.price, 0);
   const waFor = (s: (typeof subscriptions)[number]) => {
     if (!phone) return null;
     const vars: ReminderVars = {
@@ -253,6 +255,36 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
 
         <div className="grid min-w-0 gap-6 lg:grid-cols-3">
           <Card>
+            <CardHeader
+              title="Otras ventas"
+              description={otherSales.length ? `${otherSales.length} · ${fmtMoney(otherTotal)}${licenseSales ? ` · licencias ${fmtMoney(licenseSales)}` : ""}` : "Servicios, hardware y lo que no es licencia ni suscripción"}
+              action={
+                <Link href="/ventas" className="inline-flex items-center gap-1 text-xs font-medium text-navy-700 hover:underline">
+                  <ShoppingCart size={13} /> Ventas
+                </Link>
+              }
+            />
+            {otherSales.length === 0 ? (
+              <p className="px-5 py-6 text-sm text-slate-500">Sin otras ventas registradas.</p>
+            ) : (
+              <ul className="divide-y divide-navy-100 text-sm">
+                {otherSales.map((s) => (
+                  <li key={s.id} className="flex items-start justify-between gap-3 px-5 py-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-navy-900">{s.concept}</div>
+                      <div className="text-xs text-slate-500">
+                        {fmtDate(s.sold_at)}
+                        {s.platform ? ` · ${s.platform}` : ""}
+                      </div>
+                    </div>
+                    <div className="whitespace-nowrap font-semibold text-navy-900">{fmtMoney(s.price, s.currency)}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card>
             <CardHeader title="Licencias" description={`${licenses.length} asignada${licenses.length === 1 ? "" : "s"} (propias o por puesto)`} />
             {licenses.length === 0 ? (
               <p className="px-5 py-6 text-sm text-slate-500">Sin licencias asignadas.</p>
@@ -271,6 +303,7 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                           {LICENSE_TERMS[l.term]}
                           {l.expires_at ? ` · vence ${fmtDate(l.expires_at)}` : ""}
                           {seat ? ` · puesto: ${seat.email ?? "sin correo"}` : l.kind === "account" ? " · cuenta principal" : ""}
+                          {l.price > 0 && l.client_id === id ? ` · ${fmtMoney(l.price, l.currency)}` : ""}
                         </div>
                       </div>
                       <Badge tone={l.status === "available" ? "success" : "neutral"}>{l.status === "available" ? "Disponible" : "Utilizada"}</Badge>

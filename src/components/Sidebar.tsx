@@ -1,6 +1,6 @@
 "use client";
 
-import { BellRing, ChevronLeft, ChevronRight, Gift, KeyRound, LayoutDashboard, LogOut, Menu, RefreshCw, ShieldCheck, Tag, Ticket, Upload, Users, X } from "lucide-react";
+import { BellRing, ChevronLeft, ChevronRight, Gift, KeyRound, LayoutDashboard, LogOut, Menu, RefreshCw, ShieldCheck, ShoppingCart, Tag, Ticket, Upload, Users, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { logout } from "@/lib/actions";
@@ -13,6 +13,7 @@ const NAV = [
   { href: "/cuentas", label: "Cuentas", icon: KeyRound },
   { href: "/suscripciones", label: "Suscripciones", icon: RefreshCw },
   { href: "/licencias", label: "Licencias", icon: Ticket },
+  { href: "/ventas", label: "Ventas", icon: ShoppingCart },
   { href: "/renovaciones", label: "Renovaciones", icon: BellRing },
   { href: "/lealtad", label: "Lealtad", icon: Gift },
   { href: "/precios", label: "Precios", icon: Tag },

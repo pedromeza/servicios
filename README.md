@@ -5,7 +5,8 @@ Aplicación privada para llevar el control de:
 - **Clientes** a quienes vendes.
 - **Cuentas** (Autodesk, Microsoft, Adobe…): usuario y contraseña cifrados, tipo administrador/usuario y de qué cuenta admin depende cada usuario.
 - **Suscripciones** vendidas: cuenta, cliente, programas incluidos (solo AutoCAD, colección completa…), fecha de compra, costo, precio, fecha de renovación y estado.
-- **Licencias** (claves de Windows, Office…): clave cifrada, disponible/utilizada, cliente y fecha de uso.
+- **Licencias** (claves de Windows, Office, antivirus, Adobe…): clave cifrada, disponible/utilizada, cliente, fecha de uso, precio y costo.
+- **Ventas**: todo lo cobrado en un solo libro (suscripciones, renovaciones, licencias con precio y otras ventas como servicios o hardware), totales por mes y exportación a Excel.
 - **Panel** con renovaciones próximas, ganancia acumulada y existencias de licencias.
 - **Aviso diario por correo** con las renovaciones a 30, 15, 7, 3, 1 y 0 días (y las vencidas).
 
@@ -113,8 +114,9 @@ curl -H "Authorization: Bearer TU_CRON_SECRET" https://<nombre>.vercel.app/api/c
 src/
   app/
     login/                 inicio de sesión
-    (app)/                 zona privada: panel, clientes, cuentas, suscripciones, licencias, seguridad
+    (app)/                 zona privada: panel, clientes, cuentas, suscripciones, licencias, ventas, seguridad
     api/cron/renewals/     aviso diario por correo
+    api/ventas/export/     libro de ventas en .xlsx
   components/              UI (botones, diálogos, campo secreto…) y gestores por módulo
   lib/
     actions.ts             acciones de servidor: validan (zod), cifran y guardan

@@ -60,8 +60,8 @@ async function audit(supabase: Db, action: AuditAction, entity: string, entityId
 
 const HELPER_DENIED = "Esta acción solo la puede hacer el dueño de la cuenta.";
 
-type TrashTable = "clients" | "accounts" | "licenses" | "subscriptions";
-const TRASH_LABEL: Record<TrashTable, string> = { clients: "client", accounts: "account", licenses: "license", subscriptions: "subscription" };
+type TrashTable = "clients" | "accounts" | "licenses" | "subscriptions" | "sales";
+const TRASH_LABEL: Record<TrashTable, string> = { clients: "client", accounts: "account", licenses: "license", subscriptions: "subscription", sales: "sale" };
 
 /** Papelera: marca deleted_at. Si la columna no existe aún (migración pendiente), borra como antes. */
 async function trashRow(table: TrashTable, id: string, labelColumn: string): Promise<ActionState> {
@@ -511,6 +511,10 @@ const licenseSchema = z.object({
   status: z.enum(["available", "used"]),
   client_id: uuidOrNull,
   used_at: dateField,
+  price: z.coerce.number().min(0, "No puede ser negativo"),
+  cost: z.coerce.number().min(0, "No puede ser negativo"),
+  currency: z.enum(["MXN", "USD"]),
+  platform: z.string().max(60),
   notes: z.string().max(2000),
 });
 
@@ -536,6 +540,10 @@ export async function saveLicense(_prev: ActionState, fd: FormData): Promise<Act
     status: str(fd, "status") || "available",
     client_id: orNull(str(fd, "client_id")),
     used_at: orNull(str(fd, "used_at")),
+    price: str(fd, "price") || "0",
+    cost: str(fd, "cost") || "0",
+    currency: str(fd, "currency") || "MXN",
+    platform: str(fd, "platform"),
     notes: str(fd, "notes"),
   });
   if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
@@ -560,6 +568,10 @@ export async function saveLicense(_prev: ActionState, fd: FormData): Promise<Act
     status: d.status,
     client_id: d.client_id,
     used_at: d.status === "used" ? (d.used_at ?? todayISO()) : null,
+    price: d.price,
+    cost: d.cost,
+    currency: d.currency,
+    platform: d.platform || null,
     notes_enc: encrypt(d.notes),
   };
   if (d.kind === "key") {
@@ -577,14 +589,32 @@ export async function saveLicense(_prev: ActionState, fd: FormData): Promise<Act
     payload.key_hint = "";
   }
 
+  const moneyPending = (msg: string) => /price|cost|currency|platform|schema cache/i.test(msg);
+  const withoutMoney = () => {
+    const rest = { ...payload };
+    for (const k of ["price", "cost", "currency", "platform"]) delete rest[k];
+    return rest;
+  };
   let licenseId = d.id;
   if (licenseId) {
-    const { error } = await supabase.from("licenses").update(payload).eq("id", licenseId);
-    if (error) return { ok: false, error: error.message };
+    let res = await supabase.from("licenses").update(payload).eq("id", licenseId);
+    if (res.error && moneyPending(res.error.message)) {
+      // Migración 0018 pendiente: se guarda sin el dinero y se avisa.
+      res = await supabase.from("licenses").update(withoutMoney()).eq("id", licenseId);
+      if (!res.error && (d.price || d.cost)) return { ok: false, error: "Se guardó la licencia, pero el precio y costo necesitan la migración 0018. Aplícala desde el aviso amarillo del panel." };
+    }
+    if (res.error) return { ok: false, error: res.error.message };
   } else {
-    const { data, error } = await supabase.from("licenses").insert(payload).select("id").single();
-    if (error) return { ok: false, error: error.message };
-    licenseId = (data as { id: string }).id;
+    let res = await supabase.from("licenses").insert(payload).select("id").single();
+    if (res.error && moneyPending(res.error.message)) {
+      res = await supabase.from("licenses").insert(withoutMoney()).select("id").single();
+      if (!res.error && (d.price || d.cost)) {
+        await audit(supabase, "create", "license", (res.data as { id: string }).id, `${d.product} · sin precio (migración 0018 pendiente)`);
+        return { ok: false, error: "Se guardó la licencia, pero el precio y costo necesitan la migración 0018. Aplícala desde el aviso amarillo del panel." };
+      }
+    }
+    if (res.error) return { ok: false, error: res.error.message };
+    licenseId = (res.data as { id: string }).id;
   }
 
   await audit(supabase, d.id ? "update" : "create", "license", licenseId, `${d.product} · ${d.kind === "account" ? "cuenta" : "clave"}`);
@@ -616,6 +646,70 @@ export async function toggleLicenseUsed(id: string, used: boolean): Promise<Acti
 
 export async function deleteLicense(id: string): Promise<ActionState> {
   return trashRow("licenses", id, "product");
+}
+
+// ---------------------------------------------------------------- Ventas sueltas
+const saleSchema = z.object({
+  id: z.uuid().nullable(),
+  client_id: uuidOrNull,
+  concept: z.string().min(1, "Indica qué vendiste").max(200),
+  sold_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Indica la fecha"),
+  price: z.coerce.number().min(0, "No puede ser negativo"),
+  cost: z.coerce.number().min(0, "No puede ser negativo"),
+  currency: z.enum(["MXN", "USD"]),
+  platform: z.string().max(60),
+  notes: z.string().max(2000),
+});
+
+export async function saveSale(_prev: ActionState, fd: FormData): Promise<ActionState> {
+  const parsed = saleSchema.safeParse({
+    id: orNull(str(fd, "id")),
+    client_id: orNull(str(fd, "client_id")),
+    concept: str(fd, "concept"),
+    sold_at: str(fd, "sold_at") || todayISO(),
+    price: str(fd, "price") || "0",
+    cost: str(fd, "cost") || "0",
+    currency: str(fd, "currency") || "MXN",
+    platform: str(fd, "platform"),
+    notes: str(fd, "notes"),
+  });
+  if (!parsed.success) return { ok: false, errors: zodErrors(parsed.error) };
+  const d = parsed.data;
+  const { supabase } = await requireUser();
+  const payload = {
+    client_id: d.client_id,
+    concept: d.concept,
+    sold_at: d.sold_at,
+    price: d.price,
+    cost: d.cost,
+    currency: d.currency,
+    platform: d.platform || null,
+    notes_enc: encrypt(d.notes),
+  };
+  let saleId = d.id;
+  if (saleId) {
+    const { error } = await supabase.from("sales").update(payload).eq("id", saleId);
+    if (error) return { ok: false, error: error.message };
+  } else {
+    const { data, error } = await supabase.from("sales").insert(payload).select("id").single();
+    if (error) {
+      if (/sales|schema cache/i.test(error.message)) return { ok: false, error: "Falta aplicar la migración 0018 (tabla de ventas). Revisa el aviso amarillo del panel." };
+      return { ok: false, error: error.message };
+    }
+    saleId = (data as { id: string }).id;
+  }
+  await audit(supabase, d.id ? "update" : "create", "sale", saleId, `${d.concept} · ${fmtMoney(d.price, d.currency)}`);
+  refresh();
+  return { ok: true };
+}
+export async function deleteSale(id: string): Promise<ActionState> {
+  return trashRow("sales", id, "concept");
+}
+export async function restoreSale(id: string): Promise<ActionState> {
+  return restoreRow("sales", id, "concept");
+}
+export async function purgeSale(id: string): Promise<ActionState> {
+  return purgeRow("sales", id, "concept");
 }
 
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)

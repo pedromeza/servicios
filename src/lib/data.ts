@@ -7,11 +7,14 @@ import { buildCard, type LoyaltyCard, type Reward, type Stamp } from "./loyalty"
 import { DEFAULT_REMINDER, whatsappNumber, type ReminderSettings } from "./reminders";
 import { splitEmails } from "./emails";
 import { PROVIDERS } from "./types";
+import { productsText } from "./products";
 import type {
   Account,
   AuditEntry,
   Client,
   DashboardData,
+  LedgerMonth,
+  LedgerRow,
   PriceItem,
   ReminderCandidate,
   RenewalEvent,
@@ -19,6 +22,7 @@ import type {
   License,
   LicenseSeat,
   Option,
+  Sale,
   Subscription,
 } from "./types";
 
@@ -65,6 +69,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0014_renewal_scope.sql", () => supabase.from("renewal_events").select("plan").limit(1)],
     ["0015_term_months.sql", () => supabase.from("accounts").select("term_months").limit(1)],
     ["0016_price_term_months.sql", () => supabase.from("price_list").select("term_months").limit(1)],
+    ["0018_sales.sql", () => supabase.from("sales").select("id").limit(1)],
 
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
@@ -274,6 +279,10 @@ export async function listLicenses(filters: { q?: string; status?: string; kind?
       client_id: r.client_id,
       client_name: r.client?.name ?? null,
       used_at: r.used_at,
+      price: Number(r.price ?? 0),
+      cost: Number(r.cost ?? 0),
+      currency: r.currency ?? "MXN",
+      platform: r.platform ?? null,
       notes: decrypt(r.notes_enc),
       created_at: r.created_at,
       deleted_at: r.deleted_at ?? null,
@@ -354,6 +363,7 @@ export async function getClient(id: string) {
   if (!client) return null;
   const subscriptions = subsAll.filter((s) => s.client_id === id).sort((a, b) => (b.purchased_at ?? "").localeCompare(a.purchased_at ?? ""));
   const licenses = lics.filter((l) => l.client_id === id || l.seat_assignments.some((s) => s.client_id === id));
+  const otherSales = (await listSales()).filter((s) => s.client_id === id);
   const card = cards.find((c) => c.client_id === id) ?? null;
   const subIds = new Set(subscriptions.map((s) => s.id));
   const reminders: ClientReminder[] = ((sent.error ? [] : (sent.data ?? [])) as any[])
@@ -367,7 +377,7 @@ export async function getClient(id: string) {
     }));
   const renewalEvents = events.filter((e) => subIds.has(e.subscription_id));
   const settings = await getReminderSettings();
-  return { client, subscriptions, licenses, card, reminders, renewalEvents, money: renewalMoney(subscriptions, events), settings, phone: whatsappNumber(client.contact) };
+  return { client, subscriptions, licenses, otherSales, card, reminders, renewalEvents, money: renewalMoney(subscriptions, events), settings, phone: whatsappNumber(client.contact) };
 }
 
 // ---------------------------------------------------------------- Lealtad
@@ -554,8 +564,142 @@ export async function listAudit(limit = 50): Promise<AuditEntry[]> {
 }
 
 // ---------------------------------------------------------------- Panel
+// ---------------------------------------------------------------- Ventas
+/** Otras ventas (las que no son licencia ni suscripción). Con la migración 0018 pendiente devuelve []. */
+export async function listSales(opts: { trash?: boolean } = {}): Promise<Sale[]> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.from("sales").select("*, client:clients(id,name)").order("sold_at", { ascending: false }).order("created_at", { ascending: false });
+  if (error) {
+    if (isMissingSchema(error)) return [];
+    fail(error);
+  }
+  return ((data ?? []) as any[])
+    .map<Sale>((r) => ({
+      id: r.id,
+      client_id: r.client_id,
+      client_name: r.client?.name ?? null,
+      concept: r.concept,
+      sold_at: r.sold_at,
+      price: Number(r.price ?? 0),
+      cost: Number(r.cost ?? 0),
+      currency: r.currency ?? "MXN",
+      platform: r.platform ?? null,
+      notes: decrypt(r.notes_enc),
+      created_at: r.created_at,
+      deleted_at: r.deleted_at ?? null,
+    }))
+    .filter((s) => (opts.trash ? s.deleted_at !== null : s.deleted_at === null));
+}
+
+/**
+ * Libro de ventas: todo lo cobrado en un solo listado. Suscripciones (su precio original),
+ * renovaciones registradas, licencias con precio y otras ventas. Ordenado de lo más reciente a lo más viejo.
+ */
+export async function salesLedger(): Promise<LedgerRow[]> {
+  const [subs, events, licenses, sales, clients] = await Promise.all([listSubscriptions(), listRenewalEvents(), listLicenses(), listSales(), listClients()]);
+  const platformOf = new Map(clients.map((c) => [c.id, c.platform]));
+  const subById = new Map(subs.map((s) => [s.id, s]));
+  const rows: LedgerRow[] = [];
+  for (const s of subs) {
+    if (!s.purchased_at) continue;
+    rows.push({
+      key: `sub:${s.id}`,
+      kind: "subscription",
+      ref_id: s.id,
+      date: s.purchased_at,
+      client_id: s.client_id,
+      client_name: s.client_name,
+      concept: productsText(s.plan, s.products, s.account_provider) || "Suscripción",
+      detail: `${s.account_label} · ${s.seats} puesto${s.seats === 1 ? "" : "s"}`,
+      platform: (s.client_id && platformOf.get(s.client_id)) || null,
+      price: s.price,
+      cost: s.cost,
+      currency: s.currency,
+      href: `/suscripciones?q=${encodeURIComponent(s.client_name ?? "")}`,
+    });
+  }
+  for (const e of events) {
+    const s = subById.get(e.subscription_id);
+    rows.push({
+      key: `ren:${e.id}`,
+      kind: "renewal",
+      ref_id: e.subscription_id,
+      date: e.renewed_at.slice(0, 10),
+      client_id: s?.client_id ?? null,
+      client_name: s?.client_name ?? null,
+      concept: `Renovación · ${e.products.length ? productsText(e.plan ?? "individual", e.products, s?.account_provider) : s ? productsText(s.plan, s.products, s.account_provider) : "suscripción"}`,
+      detail: e.to_date ? `hasta ${e.to_date}` : "",
+      platform: (s?.client_id && platformOf.get(s.client_id)) || null,
+      price: e.amount,
+      cost: e.cost,
+      currency: e.currency,
+      href: s ? `/suscripciones?q=${encodeURIComponent(s.client_name ?? "")}` : "/suscripciones",
+    });
+  }
+  for (const l of licenses) {
+    // Una licencia cuenta como venta cuando tiene precio o ya se entregó a un cliente.
+    if (l.price <= 0 && !l.client_id) continue;
+    rows.push({
+      key: `lic:${l.id}`,
+      kind: "license",
+      ref_id: l.id,
+      date: l.purchased_at ?? l.used_at ?? l.created_at.slice(0, 10),
+      client_id: l.client_id,
+      client_name: l.client_name,
+      concept: l.product,
+      detail: `${l.term === "annual" ? "Anual" : "Permanente"} · ${l.kind === "account" ? "cuenta" : "clave"}`,
+      platform: l.platform ?? (l.client_id && platformOf.get(l.client_id)) ?? null,
+      price: l.price,
+      cost: l.cost,
+      currency: l.currency,
+      href: `/licencias?q=${encodeURIComponent(l.client_name ?? l.product)}`,
+    });
+  }
+  for (const s of sales) {
+    rows.push({
+      key: `oth:${s.id}`,
+      kind: "other",
+      ref_id: s.id,
+      date: s.sold_at,
+      client_id: s.client_id,
+      client_name: s.client_name,
+      concept: s.concept,
+      detail: s.notes ?? "",
+      platform: s.platform ?? (s.client_id && platformOf.get(s.client_id)) ?? null,
+      price: s.price,
+      cost: s.cost,
+      currency: s.currency,
+      href: "/ventas",
+    });
+  }
+  return rows.sort((a, b) => b.date.localeCompare(a.date) || a.kind.localeCompare(b.kind));
+}
+
+const MONTH_NAMES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+export function monthLabel(month: string): string {
+  const [y, m] = month.split("-");
+  return `${MONTH_NAMES[Number(m) - 1] ?? m} ${y}`;
+}
+
+/** Totales por mes (YYYY-MM), del más reciente al más viejo. */
+export function ledgerByMonth(rows: LedgerRow[]): LedgerMonth[] {
+  const m = new Map<string, LedgerMonth>();
+  for (const r of rows) {
+    const month = r.date.slice(0, 7);
+    const cur = m.get(month) ?? { month, label: monthLabel(month), count: 0, price: 0, cost: 0 };
+    cur.count += 1;
+    cur.price += r.price;
+    cur.cost += r.cost;
+    m.set(month, cur);
+  }
+  return [...m.values()].sort((a, b) => b.month.localeCompare(a.month));
+}
+
 export async function dashboardData(): Promise<DashboardData> {
-  const [subs, licenses, accounts, events] = await Promise.all([listSubscriptions(), listLicenses(), listAccounts(), listRenewalEvents()]);
+  const [subs, licenses, accounts, events, ledger] = await Promise.all([listSubscriptions(), listLicenses(), listAccounts(), listRenewalEvents(), salesLedger()]);
+  const thisMonth = new Date().toISOString().slice(0, 7);
+  const monthRows = ledger.filter((r) => r.date.startsWith(thisMonth));
+  const month = { count: monthRows.length, price: monthRows.reduce((n, r) => n + r.price, 0), cost: monthRows.reduce((n, r) => n + r.cost, 0) };
   const active = subs.filter((s) => s.status === "active");
   const withDays = active.map((s) => ({ s, d: daysUntil(s.renews_at) }));
   const renewingSoon = withDays.filter((x) => x.d !== null && x.d >= 0 && x.d <= 30).length;
@@ -589,6 +733,7 @@ export async function dashboardData(): Promise<DashboardData> {
     cost,
     profit: revenue - cost,
     money,
+    month,
     upcoming,
     licensesByProduct: [...byProduct.entries()]
       .map(([product, v]) => ({ product, ...v }))
