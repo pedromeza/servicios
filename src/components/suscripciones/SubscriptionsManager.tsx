@@ -326,10 +326,11 @@ export function SubscriptionsManager({
                         </div>
                       ) : (
                         <div className="flex justify-end gap-1 opacity-70 transition group-hover:opacity-100">
-                          {mpReady && s.price > 0 && (
+                          {mpReady && (
                             <PayLinkButton
                               iconOnly
                               subscriptionId={s.id}
+                              renewal={{ price: s.price, currency: s.currency, plan: s.plan, products: s.products, provider: s.account_provider, purchased_at: s.purchased_at, renews_at: s.renews_at }}
                               waIntro={`Hola ${s.client_name ?? ""}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(s.plan, s.products, s.account_provider)}`}
                             />
                           )}

@@ -72,6 +72,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0016_price_term_months.sql", () => supabase.from("price_list").select("term_months").limit(1)],
     ["0018_sales.sql", () => supabase.from("sales").select("id").limit(1)],
     ["0019_payment_links.sql", () => supabase.from("payment_links").select("id").limit(1)],
+    ["0020_payment_link_scope.sql", () => supabase.from("payment_links").select("products").limit(1)],
 
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));

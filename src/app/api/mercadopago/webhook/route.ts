@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   const db = createAdminClient();
   const found = await db.from("payment_links").select("*").eq("id", linkId).maybeSingle();
   if (found.error || !found.data) return NextResponse.json({ ok: true, ignored: "link desconocido" });
-  const link = found.data as { id: string; user_id: string; subscription_id: string | null; client_id: string | null; concept: string; amount: number; currency: string; months: number; status: string; mp_payment_id: string | null };
+  const link = found.data as { id: string; user_id: string; subscription_id: string | null; client_id: string | null; concept: string; amount: number; currency: string; months: number; status: string; mp_payment_id: string | null; plan?: string | null; products?: string[] | null };
 
   if (payment.status !== "approved") {
     return NextResponse.json({ ok: true, status: payment.status });
@@ -59,9 +59,16 @@ export async function POST(req: NextRequest) {
       const s = sub.data as { id: string; renews_at: string | null; renewals: number | null; plan: string | null; products: string[] | null };
       const base = s.renews_at && s.renews_at >= today ? s.renews_at : today;
       const to_date = addMonthsISO(base, link.months);
-      await db.from("subscriptions").update({ renews_at: to_date, renewals: Number(s.renewals ?? 0) + 1, status: "active" }).eq("id", s.id);
+      // Si el link se generó con otro alcance (p. ej. solo AutoCAD), la suscripción queda con ese alcance.
+      const scoped = (link.plan === "suite" || link.plan === "individual") && Array.isArray(link.products) && link.products.length > 0;
+      const plan = scoped ? link.plan! : (s.plan ?? "individual");
+      const products = scoped ? link.products! : (s.products ?? []);
+      await db
+        .from("subscriptions")
+        .update({ renews_at: to_date, renewals: Number(s.renewals ?? 0) + 1, status: "active", ...(scoped ? { plan, products } : {}) })
+        .eq("id", s.id);
       const eventRow = { user_id: link.user_id, subscription_id: s.id, renewed_at: today, amount, cost: 0, currency, from_date: s.renews_at, to_date };
-      let ev = await db.from("renewal_events").insert({ ...eventRow, plan: s.plan ?? "individual", products: s.products ?? [] });
+      let ev = await db.from("renewal_events").insert({ ...eventRow, plan, products });
       if (ev.error && /plan|products|schema cache/i.test(ev.error.message)) ev = await db.from("renewal_events").insert(eventRow);
       detail = `Renovación pagada por Mercado Pago · ${fmtMoney(amount, currency)} · nuevo vencimiento ${to_date}`;
     }

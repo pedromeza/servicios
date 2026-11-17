@@ -34,6 +34,7 @@ const BASELINE_CHECKS = {
   "0017_not_renewed.sql": `select exists (select 1 from pg_constraint where conname='subscriptions_status_check' and pg_get_constraintdef(oid) like '%not_renewed%')`,
   "0018_sales.sql": `select to_regclass('public.sales') is not null`,
   "0019_payment_links.sql": `select to_regclass('public.payment_links') is not null`,
+  "0020_payment_link_scope.sql": `select exists (select 1 from information_schema.columns where table_schema='public' and table_name='payment_links' and column_name='products')`,
 };
 
 /**

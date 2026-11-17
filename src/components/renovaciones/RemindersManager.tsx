@@ -253,6 +253,7 @@ export function RemindersManager({
                         {mpReady && (
                           <PayLinkButton
                             subscriptionId={c.subscription_id}
+                            renewal={{ price: c.price, currency: c.currency, plan: c.plan, products: c.products, provider: c.provider, purchased_at: c.purchased_at, renews_at: c.renews_at }}
                             phone={c.phone}
                             waIntro={`Hola ${c.client_name}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(c.plan, c.products, c.provider)}`}
                           />

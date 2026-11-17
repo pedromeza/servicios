@@ -172,9 +172,10 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                           <MessageCircle size={13} /> Recordar por WhatsApp
                         </a>
                       )}
-                      {mpReady && s.price > 0 && (
+                      {mpReady && (
                         <PayLinkButton
                           subscriptionId={s.id}
+                          renewal={{ price: s.price, currency: s.currency, plan: s.plan, products: s.products, provider: s.account_provider, purchased_at: s.purchased_at, renews_at: s.renews_at }}
                           phone={phone}
                           className="ml-2 mt-3"
                           waIntro={`Hola ${c.name}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(s.plan, s.products, s.account_provider)}`}

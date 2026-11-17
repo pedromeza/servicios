@@ -759,7 +759,16 @@ export type PayLinkResult = ActionState & { url?: string; share_url?: string; li
  * registra la renovación sola; para un cobro suelto (concepto + monto) se registra como otra venta.
  * Si ya hay un link pendiente igual (misma suscripción y monto) de los últimos 30 días, se reutiliza.
  */
-export async function createPaymentLink(input: { subscription_id?: string; client_id?: string; concept?: string; amount?: number; months?: number }): Promise<PayLinkResult> {
+export async function createPaymentLink(input: {
+  subscription_id?: string;
+  client_id?: string;
+  concept?: string;
+  amount?: number;
+  months?: number;
+  /** Qué se renueva, si cambia respecto a la suscripción (p. ej. tenía la suite y renueva solo AutoCAD). */
+  plan?: "individual" | "suite";
+  products?: string[];
+}): Promise<PayLinkResult> {
   if (!mpConfigured()) return { ok: false, error: "Mercado Pago no está conectado: agrega MP_ACCESS_TOKEN en Vercel (ver README)." };
   const { supabase } = await requireUser();
   let concept = (input.concept ?? "").trim().slice(0, 200);
@@ -769,6 +778,10 @@ export async function createPaymentLink(input: { subscription_id?: string; clien
   let clientId = input.client_id && z.uuid().safeParse(input.client_id).success ? input.client_id : null;
   let subscriptionId: string | null = null;
   let payerEmail: string | null = null;
+  // Alcance elegido para la renovación (null = el que ya tiene la suscripción).
+  const chosenPlan = input.plan === "suite" || input.plan === "individual" ? input.plan : null;
+  const chosenProducts = Array.isArray(input.products) ? Array.from(new Set(input.products.map((p) => String(p).trim().slice(0, 80)).filter(Boolean))).slice(0, 40) : [];
+  const scoped = chosenPlan !== null && chosenProducts.length > 0;
 
   if (input.subscription_id) {
     if (!z.uuid().safeParse(input.subscription_id).success) return { ok: false, error: "Suscripción inválida." };
@@ -787,7 +800,7 @@ export async function createPaymentLink(input: { subscription_id?: string; clien
     if (!months) months = monthsOf(s.purchased_at, s.renews_at);
     if (!amount) amount = Number(s.price ?? 0);
     const provider = (Array.isArray(s.account) ? s.account[0] : s.account)?.provider;
-    if (!concept) concept = `Renovación ${productsText(s.plan ?? "individual", s.products ?? [], provider)} · ${termLabel(months)}`;
+    if (!concept) concept = `Renovación ${scoped ? productsText(chosenPlan, chosenProducts, provider) : productsText(s.plan ?? "individual", s.products ?? [], provider)} · ${termLabel(months)}`;
     payerEmail = splitEmails(decrypt(s.email_enc))[0] ?? null;
   }
   if (!concept) return { ok: false, error: "Indica el concepto del cobro." };
@@ -802,6 +815,8 @@ export async function createPaymentLink(input: { subscription_id?: string; clien
       .eq("subscription_id", subscriptionId)
       .eq("status", "pending")
       .eq("amount", amount)
+      .eq("months", months)
+      .eq("concept", concept) // mismo alcance: el concepto lleva los programas y el plazo
       .gte("created_at", since)
       .not("url", "is", null)
       .order("created_at", { ascending: false })
@@ -813,11 +828,16 @@ export async function createPaymentLink(input: { subscription_id?: string; clien
     }
   }
 
-  const ins = await supabase
+  const row: Record<string, unknown> = { subscription_id: subscriptionId, client_id: clientId, concept, amount, currency, months };
+  let ins = await supabase
     .from("payment_links")
-    .insert({ subscription_id: subscriptionId, client_id: clientId, concept, amount, currency, months })
+    .insert(scoped ? { ...row, plan: chosenPlan, products: chosenProducts } : row)
     .select("id")
     .single();
+  if (ins.error && scoped && /plan|products/i.test(ins.error.message)) {
+    // Migración 0020 pendiente: el link se crea, pero al pagarse la suscripción conserva su alcance actual.
+    ins = await supabase.from("payment_links").insert(row).select("id").single();
+  }
   if (ins.error) {
     if (/payment_links|schema cache/i.test(ins.error.message)) return { ok: false, error: "Falta aplicar la migración 0019 (links de pago). Revisa el aviso amarillo del panel." };
     return { ok: false, error: ins.error.message };
