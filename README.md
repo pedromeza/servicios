@@ -108,6 +108,15 @@ curl -H "Authorization: Bearer TU_CRON_SECRET" https://<nombre>.vercel.app/api/c
 
 > El plan gratuito de Supabase pausa proyectos tras 7 días sin actividad. El cron diario lo mantiene despierto; si se llegara a pausar, se reactiva con un clic en el panel de Supabase.
 
+## Mercado Pago: links de pago (opcional)
+
+1. En [developers.mercadopago.com](https://www.mercadopago.com.mx/developers) entra a **Tus integraciones → Crear aplicación**, elige **Checkout Pro** y tipo **API de Preferences**.
+2. En la aplicación abre **Credenciales de producción** y copia el **Access Token**. Guárdalo en Vercel como `MP_ACCESS_TOKEN` y vuelve a desplegar.
+3. En la aplicación abre **Webhooks → Configurar notificaciones**, modo productivo, URL `https://<tu-app>.vercel.app/api/mercadopago/webhook`, evento **Pagos**. Copia la **clave secreta** y guárdala como `MP_WEBHOOK_SECRET` (opcional pero recomendado).
+4. Listo: aparece **Link de pago** en Renovaciones y en la ficha del cliente, y **Cobrar con link** en Ventas. Los correos de recordatorio llevan el link de pago de cada suscripción.
+
+Cuando el cliente paga, Mercado Pago avisa a la app: si el link era de una suscripción se registra la renovación con su nueva fecha, y si era un cobro suelto se registra como otra venta. La app siempre consulta el pago a Mercado Pago antes de registrar nada.
+
 ## Estructura
 
 ```

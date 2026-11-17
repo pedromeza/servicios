@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { SalesManager } from "@/components/ventas/SalesManager";
-import { clientOptions, ledgerByMonth, listSales, pendingMigrations, salesLedger } from "@/lib/data";
+import { clientOptions, ledgerByMonth, listPaymentLinks, listSales, pendingMigrations, salesLedger } from "@/lib/data";
+import { mpConfigured } from "@/lib/mercadopago";
 import { filterLedger } from "@/lib/ledger";
 import { paginate } from "@/lib/paging";
 
@@ -11,7 +12,7 @@ const s = (v: string | string[] | undefined) => (typeof v === "string" ? v : "")
 export default async function VentasPage({ searchParams }: PageProps<"/ventas">) {
   const sp = await searchParams;
   const filters = { q: s(sp.q), tipo: s(sp.tipo), mes: s(sp.mes), plataforma: s(sp.plataforma) };
-  const [ledger, sales, trash, clients, pending] = await Promise.all([salesLedger(), listSales(), listSales({ trash: true }), clientOptions(), pendingMigrations()]);
+  const [ledger, sales, trash, clients, pending, links] = await Promise.all([salesLedger(), listSales(), listSales({ trash: true }), clientOptions(), pendingMigrations(), listPaymentLinks(30)]);
   const months = ledgerByMonth(ledger);
   const filtered = filterLedger(ledger, filters);
   const { items, paging } = paginate(filtered, s(sp.page) || undefined, s(sp.por) || undefined);
@@ -36,6 +37,8 @@ export default async function VentasPage({ searchParams }: PageProps<"/ventas">)
       clients={clients}
       platforms={platforms}
       migrationPending={pending.includes("0018_sales.sql")}
+      links={links}
+      mpReady={mpConfigured()}
     />
   );
 }

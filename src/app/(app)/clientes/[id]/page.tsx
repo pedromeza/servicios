@@ -4,7 +4,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardHeader, Table, Td, Th } from "@/components/ui/Card";
+import { PayLinkButton } from "@/components/ui/PayLinkButton";
 import { getClient } from "@/lib/data";
+import { mpConfigured } from "@/lib/mercadopago";
 import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import { LOYALTY } from "@/lib/loyalty";
 import { daysPhrase, fillTemplate, whatsappLink, type ReminderVars } from "@/lib/reminders";
@@ -19,6 +21,7 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
   const data = await getClient(id);
   if (!data) notFound();
   const { client: c, subscriptions, licenses, otherSales, card, reminders, renewalEvents, money, settings, phone } = data;
+  const mpReady = mpConfigured();
   const licenseSales = licenses.filter((l) => l.client_id === id).reduce((n, l) => n + l.price, 0);
   const otherTotal = otherSales.reduce((n, s) => n + s.price, 0);
   const waFor = (s: (typeof subscriptions)[number]) => {
@@ -168,6 +171,14 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                         >
                           <MessageCircle size={13} /> Recordar por WhatsApp
                         </a>
+                      )}
+                      {mpReady && s.price > 0 && (
+                        <PayLinkButton
+                          subscriptionId={s.id}
+                          phone={phone}
+                          className="ml-2 mt-3"
+                          waIntro={`Hola ${c.name}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(s.plan, s.products, s.account_provider)}`}
+                        />
                       )}
                     </div>
                   );

@@ -12,6 +12,8 @@ import { addMonthsISO, addYearsISO, todayISO } from "./format";
 import { LOYALTY } from "./loyalty";
 import { normalizeName, sameName } from "./names";
 import { productsText } from "./products";
+import { createPreference, monthsOf, mpConfigured } from "./mercadopago";
+import { termLabel } from "./terms";
 import { splitEmails } from "./emails";
 import { parseMlWorkbook, type MlSale } from "./mercadolibre";
 import { sendEmail } from "./email";
@@ -748,6 +750,106 @@ export async function purgeSale(id: string): Promise<ActionState> {
   return purgeRow("sales", id, "concept");
 }
 
+// ---------------------------------------------------------------- Links de pago (Mercado Pago)
+export type PayLinkResult = ActionState & { url?: string; link_id?: string; concept?: string; amount?: number };
+
+/**
+ * Genera un link de pago de Mercado Pago. Para una suscripción, cobra su precio y al pagarse se
+ * registra la renovación sola; para un cobro suelto (concepto + monto) se registra como otra venta.
+ * Si ya hay un link pendiente igual (misma suscripción y monto) de los últimos 30 días, se reutiliza.
+ */
+export async function createPaymentLink(input: { subscription_id?: string; client_id?: string; concept?: string; amount?: number; months?: number }): Promise<PayLinkResult> {
+  if (!mpConfigured()) return { ok: false, error: "Mercado Pago no está conectado: agrega MP_ACCESS_TOKEN en Vercel (ver README)." };
+  const { supabase } = await requireUser();
+  let concept = (input.concept ?? "").trim().slice(0, 200);
+  let amount = Number(input.amount ?? 0);
+  let currency = "MXN";
+  let months = Math.max(0, Math.floor(Number(input.months ?? 0)));
+  let clientId = input.client_id && z.uuid().safeParse(input.client_id).success ? input.client_id : null;
+  let subscriptionId: string | null = null;
+  let payerEmail: string | null = null;
+
+  if (input.subscription_id) {
+    if (!z.uuid().safeParse(input.subscription_id).success) return { ok: false, error: "Suscripción inválida." };
+    const res = await supabase
+      .from("subscriptions")
+      .select("id,client_id,price,currency,purchased_at,renews_at,plan,products,email_enc,account:accounts(provider)")
+      .eq("id", input.subscription_id)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (res.error) return { ok: false, error: res.error.message };
+    const s = res.data as unknown as { id: string; client_id: string | null; price: number; currency: string | null; purchased_at: string | null; renews_at: string | null; plan: string | null; products: string[] | null; email_enc: string | null; account: { provider: string } | { provider: string }[] | null } | null;
+    if (!s) return { ok: false, error: "La suscripción no existe." };
+    subscriptionId = s.id;
+    clientId = s.client_id;
+    currency = s.currency ?? "MXN";
+    if (!months) months = monthsOf(s.purchased_at, s.renews_at);
+    if (!amount) amount = Number(s.price ?? 0);
+    const provider = (Array.isArray(s.account) ? s.account[0] : s.account)?.provider;
+    if (!concept) concept = `Renovación ${productsText(s.plan ?? "individual", s.products ?? [], provider)} · ${termLabel(months)}`;
+    payerEmail = splitEmails(decrypt(s.email_enc))[0] ?? null;
+  }
+  if (!concept) return { ok: false, error: "Indica el concepto del cobro." };
+  if (!(amount > 0)) return { ok: false, error: "El monto debe ser mayor a cero. Pon el precio en la suscripción o escríbelo aquí." };
+
+  // Reutilizar un link pendiente igual para no llenar Mercado Pago de preferencias.
+  if (subscriptionId) {
+    const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+    const prev = await supabase
+      .from("payment_links")
+      .select("id,url,concept,amount")
+      .eq("subscription_id", subscriptionId)
+      .eq("status", "pending")
+      .eq("amount", amount)
+      .gte("created_at", since)
+      .not("url", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (prev.data?.url) return { ok: true, url: prev.data.url, link_id: prev.data.id, concept: prev.data.concept, amount: Number(prev.data.amount) };
+  }
+
+  const ins = await supabase
+    .from("payment_links")
+    .insert({ subscription_id: subscriptionId, client_id: clientId, concept, amount, currency, months })
+    .select("id")
+    .single();
+  if (ins.error) {
+    if (/payment_links|schema cache/i.test(ins.error.message)) return { ok: false, error: "Falta aplicar la migración 0019 (links de pago). Revisa el aviso amarillo del panel." };
+    return { ok: false, error: ins.error.message };
+  }
+  const linkId = (ins.data as { id: string }).id;
+  const origin = await appOrigin();
+  try {
+    const pref = await createPreference({
+      title: concept,
+      amount,
+      currency,
+      external_reference: linkId,
+      notification_url: `${origin}/api/mercadopago/webhook`,
+      back_url: origin ? `${origin}/pago-recibido` : undefined,
+      payer_email: payerEmail,
+    });
+    await supabase.from("payment_links").update({ mp_preference_id: pref.id, url: pref.init_point }).eq("id", linkId);
+    await audit(supabase, "create", "payment_link", linkId, `${concept} · ${fmtMoney(amount, currency)}`);
+    refresh();
+    return { ok: true, url: pref.init_point, link_id: linkId, concept, amount };
+  } catch (e) {
+    await supabase.from("payment_links").update({ status: "cancelled" }).eq("id", linkId);
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export async function cancelPaymentLink(id: string): Promise<ActionState> {
+  if (!z.uuid().safeParse(id).success) return { ok: false, error: "Link inválido." };
+  const { supabase } = await requireUser();
+  const { error } = await supabase.from("payment_links").update({ status: "cancelled" }).eq("id", id).eq("status", "pending");
+  if (error) return { ok: false, error: error.message };
+  await audit(supabase, "update", "payment_link", id, "Link de pago cancelado");
+  refresh();
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------- Secretos (solo bajo demanda, con bitácora)
 // ---------------------------------------------------------------- Lealtad
 const rewardSchema = z.object({
@@ -890,7 +992,13 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
       plataforma: c.platform ?? "nuestra tienda",
       whatsapp: settings.whatsapp || "nuestro WhatsApp",
     };
-    const mail = reminderHtml(settings, vars);
+    // Con Mercado Pago conectado, el botón del correo lleva al link de pago de esa suscripción.
+    let perSub = settings;
+    if (mpConfigured() && c.price > 0) {
+      const link = await createPaymentLink({ subscription_id: id });
+      if (link.ok && link.url) perSub = { ...settings, payment_url: link.url, reminder_button: settings.reminder_button.replace(/mercado libre/i, "Mercado Pago") };
+    }
+    const mail = reminderHtml(perSub, vars);
     const res = await sendEmail(c.emails, mail.subject, mail.html, mail.text);
     if (res.ok) {
       await supabase.from("reminders").insert({ subscription_id: id, to_email_enc: encrypt(c.emails.join(", ")), kind: "client" });

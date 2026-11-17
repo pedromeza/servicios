@@ -211,6 +211,22 @@ export type Sale = {
   deleted_at: string | null;
 };
 
+/** Link de pago de Mercado Pago generado desde la app. */
+export type PaymentLink = {
+  id: string;
+  subscription_id: string | null;
+  client_id: string | null;
+  client_name: string | null;
+  concept: string;
+  amount: number;
+  currency: string;
+  months: number;
+  url: string | null;
+  status: "pending" | "paid" | "cancelled";
+  paid_at: string | null;
+  created_at: string;
+};
+
 export const SALE_KINDS = { subscription: "Suscripción", renewal: "Renovación", license: "Licencia", other: "Otra venta" } as const;
 export type SaleKind = keyof typeof SALE_KINDS;
 

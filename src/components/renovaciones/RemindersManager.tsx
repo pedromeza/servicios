@@ -11,6 +11,7 @@ import { renewalTone } from "@/lib/renewal";
 import { productsText } from "@/lib/products";
 import type { ReminderCandidate } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
+import { PayLinkButton } from "@/components/ui/PayLinkButton";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
 import { ConfirmDialog } from "@/components/ui/Dialog";
@@ -25,6 +26,7 @@ export function RemindersManager({
   testTo,
   resendReady,
   defaultLogoUrl,
+  mpReady = false,
 }: {
   settings: ReminderSettings;
   candidates: ReminderCandidate[];
@@ -33,6 +35,8 @@ export function RemindersManager({
   testTo: string;
   resendReady: boolean;
   defaultLogoUrl: string;
+  /** Mercado Pago conectado (MP_ACCESS_TOKEN): se pueden generar links de pago. */
+  mpReady?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -246,6 +250,13 @@ export function RemindersManager({
                         <Button size="sm" variant="secondary" disabled={c.emails.length === 0 || !resendReady || pending} onClick={() => setConfirm([c.subscription_id])}>
                           <Send size={13} /> Correo
                         </Button>
+                        {mpReady && (
+                          <PayLinkButton
+                            subscriptionId={c.subscription_id}
+                            phone={c.phone}
+                            waIntro={`Hola ${c.client_name}, te saludamos de PGPM MEX. Aquí tienes tu link para renovar ${productsText(c.plan, c.products, c.provider)}`}
+                          />
+                        )}
                       </div>
                     </Td>
                   </tr>

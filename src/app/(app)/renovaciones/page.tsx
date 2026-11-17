@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { RemindersManager } from "@/components/renovaciones/RemindersManager";
 import { getReminderSettings, renewalCandidates } from "@/lib/data";
 import { emailProvider } from "@/lib/email";
+import { mpConfigured } from "@/lib/mercadopago";
 
 export const metadata: Metadata = { title: "Renovaciones" };
 
@@ -23,6 +24,7 @@ export default async function RenovacionesPage({ searchParams }: PageProps<"/ren
       testTo={testTo}
       resendReady={mail.provider !== "none"}
       defaultLogoUrl={defaultLogoUrl}
+      mpReady={mpConfigured()}
     />
   );
 }

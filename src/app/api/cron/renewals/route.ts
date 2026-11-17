@@ -8,6 +8,49 @@ import { addDaysISO, daysUntil, fmtDate, fmtMoney, todayISO } from "@/lib/format
 import { productsText } from "@/lib/products";
 import { daysPhrase, DEFAULT_REMINDER, fillTemplate, parseAutoDays, reminderHtml, whatsappLink, whatsappNumber, type ReminderSettings, type ReminderVars } from "@/lib/reminders";
 import { createAdminClient } from "@/lib/supabase/server";
+import { createPreference, monthsOf, mpConfigured } from "@/lib/mercadopago";
+import { termLabel } from "@/lib/terms";
+
+/** Link de pago para la suscripción (reutiliza uno pendiente igual de los últimos 30 días). */
+async function paymentLinkFor(
+  db: ReturnType<typeof createAdminClient>,
+  userId: string,
+  s: { id: string; client_id?: string | null; price: number; currency: string | null; purchased_at: string | null; renews_at: string | null; plan: string | null; products: string[] | null },
+  concept: string,
+  appUrl: string,
+): Promise<string | null> {
+  if (!mpConfigured() || !(Number(s.price) > 0)) return null;
+  const amount = Number(s.price);
+  const since = new Date(Date.now() - 30 * 86_400_000).toISOString();
+  const prev = await db
+    .from("payment_links")
+    .select("url")
+    .eq("subscription_id", s.id)
+    .eq("status", "pending")
+    .eq("amount", amount)
+    .gte("created_at", since)
+    .not("url", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (prev.data?.url) return prev.data.url as string;
+  const months = monthsOf(s.purchased_at, s.renews_at);
+  const ins = await db
+    .from("payment_links")
+    .insert({ user_id: userId, subscription_id: s.id, client_id: s.client_id ?? null, concept: `${concept} · ${termLabel(months)}`, amount, currency: s.currency ?? "MXN", months })
+    .select("id")
+    .single();
+  if (ins.error) return null;
+  const linkId = (ins.data as { id: string }).id;
+  try {
+    const pref = await createPreference({ title: `${concept} · ${termLabel(months)}`, amount, currency: s.currency ?? "MXN", external_reference: linkId, notification_url: `${appUrl}/api/mercadopago/webhook`, back_url: `${appUrl}/pago-recibido` });
+    await db.from("payment_links").update({ mp_preference_id: pref.id, url: pref.init_point }).eq("id", linkId);
+    return pref.init_point;
+  } catch {
+    await db.from("payment_links").update({ status: "cancelled" }).eq("id", linkId);
+    return null;
+  }
+}
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +101,7 @@ async function sendAutomaticReminders(supabase: ReturnType<typeof createAdminCli
     const [subs, recent] = await Promise.all([
       supabase
         .from("subscriptions")
-        .select("id,plan,products,purchased_at,renews_at,price,currency,email_enc,client:clients(name,contact_enc,platform),account:accounts(provider)")
+        .select("id,client_id,plan,products,purchased_at,renews_at,price,currency,email_enc,client:clients(name,contact_enc,platform),account:accounts(provider)")
         .eq("user_id", row.user_id)
         .eq("status", "active")
         .is("deleted_at", null)
@@ -102,7 +145,9 @@ async function sendAutomaticReminders(supabase: ReturnType<typeof createAdminCli
         plataforma: s.client?.platform ?? "nuestra tienda",
         whatsapp: settings.whatsapp || "nuestro WhatsApp",
       };
-      const mail = reminderHtml(settings, vars);
+      const payUrl = await paymentLinkFor(supabase, row.user_id, s, `Renovación ${vars.programas}`, appUrl);
+      const perSub = payUrl ? { ...settings, payment_url: payUrl, reminder_button: settings.reminder_button.replace(/mercado libre/i, "Mercado Pago") } : settings;
+      const mail = reminderHtml(perSub, vars);
       const res = await sendEmail(to, mail.subject, mail.html, mail.text);
       if (res.ok) {
         sent += 1;

@@ -1,17 +1,19 @@
 "use client";
 
-import { Download, ExternalLink, Pencil, Plus, ShoppingCart, Trash2, Undo2 } from "lucide-react";
+import { Check, Copy, CreditCard, Download, ExternalLink, Pencil, Plus, ShoppingCart, Trash2, Undo2, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
-import { deleteSale, purgeSale, restoreSale } from "@/lib/actions";
+import { cancelPaymentLink, createPaymentLink, deleteSale, purgeSale, restoreSale } from "@/lib/actions";
 import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import type { Page } from "@/lib/paging";
-import { SALE_KINDS, type LedgerMonth, type LedgerRow, type Option, type Sale } from "@/lib/types";
+import { SALE_KINDS, type LedgerMonth, type LedgerRow, type Option, type PaymentLink, type Sale } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card, CardHeader, EmptyState, PageHeader, Table, Td, Th } from "@/components/ui/Card";
 import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
+import { ComboSelect } from "@/components/ui/ComboSelect";
+import { Field, Input } from "@/components/ui/Fields";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { Pagination } from "@/components/ui/Pagination";
 import { SaleForm } from "./SaleForm";
@@ -28,6 +30,8 @@ export function SalesManager({
   clients,
   platforms,
   migrationPending,
+  links = [],
+  mpReady = false,
 }: {
   rows: LedgerRow[];
   paging: Page;
@@ -38,7 +42,25 @@ export function SalesManager({
   clients: Option[];
   platforms: string[];
   migrationPending: boolean;
+  links?: PaymentLink[]; // links de pago de Mercado Pago recientes
+  mpReady?: boolean;
 }) {
+  // Cobro suelto con link de Mercado Pago.
+  const [charging, setCharging] = useState(false);
+  const [chargeConcept, setChargeConcept] = useState("");
+  const [chargeAmount, setChargeAmount] = useState("");
+  const [chargeClient, setChargeClient] = useState("");
+  const [chargeError, setChargeError] = useState<string | null>(null);
+  const [chargeUrl, setChargeUrl] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyUrl = async (id: string, url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedId(id);
+    } catch {
+      window.prompt("Copia el link:", url);
+    }
+  };
   const params = useSearchParams();
   const inTrash = params.get("tipo") === "deleted";
   const [editing, setEditing] = useState<Sale | "new" | null>(null);
@@ -67,6 +89,18 @@ export function SalesManager({
             >
               <Download size={16} /> Exportar a Excel
             </a>
+            {mpReady && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setChargeError(null);
+                  setChargeUrl(null);
+                  setCharging(true);
+                }}
+              >
+                <CreditCard size={16} /> Cobrar con link
+              </Button>
+            )}
             <Button onClick={() => open("new")} disabled={migrationPending} title={migrationPending ? "Falta aplicar la migración 0018" : undefined}>
               <Plus size={16} /> Otra venta
             </Button>
@@ -107,6 +141,95 @@ export function SalesManager({
           </div>
         </Card>
       )}
+
+      {!inTrash && links.length > 0 && (
+        <Card className="mb-4">
+          <CardHeader
+            title="Links de pago de Mercado Pago"
+            description={`${links.filter((l) => l.status === "pending").length} pendiente${links.filter((l) => l.status === "pending").length === 1 ? "" : "s"} · ${links.filter((l) => l.status === "paid").length} pagado${links.filter((l) => l.status === "paid").length === 1 ? "" : "s"}. Al pagarse, la renovación o la venta se registra sola.`}
+          />
+          <ul className="max-h-72 divide-y divide-navy-100 overflow-y-auto text-sm">
+            {links.map((l) => (
+              <li key={l.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5">
+                <div className="min-w-0">
+                  <div className="truncate font-medium text-navy-900">{l.concept}</div>
+                  <div className="text-xs text-slate-500">
+                    {l.client_name ?? "Sin cliente"} · creado {fmtDateTime(l.created_at)}
+                    {l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : ""}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="whitespace-nowrap font-semibold text-navy-900">{fmtMoney(l.amount, l.currency)}</span>
+                  <Badge tone={l.status === "paid" ? "success" : l.status === "pending" ? "warning" : "neutral"}>{l.status === "paid" ? "Pagado" : l.status === "pending" ? "Pendiente" : "Cancelado"}</Badge>
+                  {l.status === "pending" && l.url && (
+                    <>
+                      <Button size="sm" variant="secondary" onClick={() => copyUrl(l.id, l.url!)}>
+                        {copiedId === l.id ? <Check size={13} /> : <Copy size={13} />} {copiedId === l.id ? "Copiado" : "Copiar"}
+                      </Button>
+                      <Button size="icon" variant="ghost" aria-label="Cancelar link" className="hover:text-red-600" disabled={pending} onClick={() => start(() => cancelPaymentLink(l.id).then(() => undefined))}>
+                        <X size={15} />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
+
+      <Dialog open={charging} onClose={() => setCharging(false)} title="Cobrar con link de Mercado Pago" description="Genera un link para cualquier cobro. Al pagarse se registra solo como otra venta.">
+        {chargeUrl ? (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 rounded-lg border border-navy-200 bg-navy-50 px-3 py-2 text-sm">
+              <input readOnly value={chargeUrl} className="min-w-0 flex-1 bg-transparent text-slate-700 outline-none" onFocus={(ev) => ev.currentTarget.select()} />
+              <Button size="sm" variant="secondary" onClick={() => copyUrl("new", chargeUrl)}>
+                {copiedId === "new" ? <Check size={13} /> : <Copy size={13} />} {copiedId === "new" ? "Copiado" : "Copiar"}
+              </Button>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={() => setCharging(false)}>Listo</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <Field label="Concepto">
+              <Input value={chargeConcept} onChange={(ev) => setChargeConcept(ev.target.value)} placeholder="Office 2021 Professional Plus" autoFocus />
+            </Field>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Monto (MXN)">
+                <Input type="number" min={1} step="0.01" inputMode="decimal" value={chargeAmount} onChange={(ev) => setChargeAmount(ev.target.value)} placeholder="0.00" />
+              </Field>
+              <Field label="Cliente">
+                <ComboSelect name="charge_client" value={chargeClient} onChange={setChargeClient} options={clients} emptyLabel="Sin cliente" placeholder="Buscar cliente…" />
+              </Field>
+            </div>
+            {chargeError && <p className="text-sm text-red-600">{chargeError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setCharging(false)}>
+                Cancelar
+              </Button>
+              <Button
+                disabled={pending || !chargeConcept.trim() || !(Number(chargeAmount) > 0)}
+                onClick={() =>
+                  start(async () => {
+                    const res = await createPaymentLink({ concept: chargeConcept, amount: Number(chargeAmount), client_id: chargeClient || undefined });
+                    if (!res.ok || !res.url) {
+                      setChargeError(res.error ?? "No se pudo generar el link.");
+                      return;
+                    }
+                    setChargeUrl(res.url);
+                    setChargeConcept("");
+                    setChargeAmount("");
+                  })
+                }
+              >
+                {pending ? "Generando…" : "Generar link"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
 
       <Card>
         {inTrash ? (

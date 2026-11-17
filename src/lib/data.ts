@@ -22,6 +22,7 @@ import type {
   License,
   LicenseSeat,
   Option,
+  PaymentLink,
   Sale,
   Subscription,
 } from "./types";
@@ -70,6 +71,7 @@ export async function pendingMigrations(): Promise<string[]> {
     ["0015_term_months.sql", () => supabase.from("accounts").select("term_months").limit(1)],
     ["0016_price_term_months.sql", () => supabase.from("price_list").select("term_months").limit(1)],
     ["0018_sales.sql", () => supabase.from("sales").select("id").limit(1)],
+    ["0019_payment_links.sql", () => supabase.from("payment_links").select("id").limit(1)],
 
   ];
   const results = await Promise.all(probes.map(async ([name, run]) => ({ name, res: await run() })));
@@ -564,6 +566,30 @@ export async function listAudit(limit = 50): Promise<AuditEntry[]> {
 }
 
 // ---------------------------------------------------------------- Panel
+// ---------------------------------------------------------------- Links de pago (Mercado Pago)
+export async function listPaymentLinks(limit = 50): Promise<PaymentLink[]> {
+  const { supabase } = await requireUser();
+  const { data, error } = await supabase.from("payment_links").select("*, client:clients(id,name)").order("created_at", { ascending: false }).limit(limit);
+  if (error) {
+    if (isMissingSchema(error)) return [];
+    fail(error);
+  }
+  return ((data ?? []) as any[]).map<PaymentLink>((r) => ({
+    id: r.id,
+    subscription_id: r.subscription_id,
+    client_id: r.client_id,
+    client_name: r.client?.name ?? null,
+    concept: r.concept,
+    amount: Number(r.amount ?? 0),
+    currency: r.currency ?? "MXN",
+    months: Number(r.months ?? 0),
+    url: r.url ?? null,
+    status: r.status,
+    paid_at: r.paid_at ?? null,
+    created_at: r.created_at,
+  }));
+}
+
 // ---------------------------------------------------------------- Ventas
 /** Otras ventas (las que no son licencia ni suscripción). Con la migración 0018 pendiente devuelve []. */
 export async function listSales(opts: { trash?: boolean } = {}): Promise<Sale[]> {
