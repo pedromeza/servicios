@@ -2,7 +2,7 @@ import "server-only";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { decrypt } from "./crypto";
 import { requireUser } from "./auth";
-import { addMonthsISO, daysUntil } from "./format";
+import { addMonthsISO, dateInZone, daysUntil, todayISO } from "./format";
 import { buildCard, type LoyaltyCard, type Reward, type Stamp } from "./loyalty";
 import { DEFAULT_REMINDER, whatsappNumber, type ReminderSettings } from "./reminders";
 import { splitEmails } from "./emails";
@@ -409,17 +409,17 @@ export async function loyaltyCards(q = ""): Promise<LoyaltyCard[]> {
   for (const s of (subs.data ?? []) as any[]) {
     if (s.deleted_at) continue; // en la papelera
     const label = (s.products ?? []).join(", ") || "Suscripción";
-    push(s.client_id, { date: s.purchased_at ?? s.created_at?.slice(0, 10) ?? null, label, kind: "subscription" });
+    push(s.client_id, { date: s.purchased_at ?? (s.created_at ? dateInZone(s.created_at) : null), label, kind: "subscription" });
     for (let i = 0; i < Number(s.renewals ?? 0); i++) {
       push(s.client_id, { date: s.renews_at ?? null, label: `Renovación de ${label}`, kind: "renewal" });
     }
   }
   for (const l of (lics.data ?? []) as any[]) {
     if (l.deleted_at) continue;
-    push(l.client_id, { date: l.used_at ?? l.purchased_at ?? l.created_at?.slice(0, 10) ?? null, label: l.product, kind: "license" });
+    push(l.client_id, { date: l.used_at ?? l.purchased_at ?? (l.created_at ? dateInZone(l.created_at) : null), label: l.product, kind: "license" });
   }
   for (const s of (seats.error ? [] : (seats.data ?? [])) as any[]) {
-    push(s.client_id, { date: s.created_at?.slice(0, 10) ?? null, label: `Puesto de ${s.license?.product ?? "licencia"}`, kind: "seat" });
+    push(s.client_id, { date: s.created_at ? dateInZone(s.created_at) : null, label: `Puesto de ${s.license?.product ?? "licencia"}`, kind: "seat" });
   }
   const rewardsByClient = new Map<string, Reward[]>();
   for (const r of (rewards.error ? [] : (rewards.data ?? [])) as any[]) {
@@ -670,7 +670,7 @@ export async function salesLedger(): Promise<LedgerRow[]> {
       key: `lic:${l.id}`,
       kind: "license",
       ref_id: l.id,
-      date: l.purchased_at ?? l.used_at ?? l.created_at.slice(0, 10),
+      date: l.purchased_at ?? l.used_at ?? dateInZone(l.created_at),
       client_id: l.client_id,
       client_name: l.client_name,
       concept: l.product,
@@ -724,7 +724,7 @@ export function ledgerByMonth(rows: LedgerRow[]): LedgerMonth[] {
 
 export async function dashboardData(): Promise<DashboardData> {
   const [subs, licenses, accounts, events, ledger] = await Promise.all([listSubscriptions(), listLicenses(), listAccounts(), listRenewalEvents(), salesLedger()]);
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = todayISO().slice(0, 7);
   const monthRows = ledger.filter((r) => r.date.startsWith(thisMonth));
   const month = { count: monthRows.length, price: monthRows.reduce((n, r) => n + r.price, 0), cost: monthRows.reduce((n, r) => n + r.cost, 0) };
   const active = subs.filter((s) => s.status === "active");

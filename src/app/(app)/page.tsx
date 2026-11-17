@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Card, CardHeader, EmptyState, Table, Td, Th } from "@/components/ui/Card";
 import { dashboardData } from "@/lib/data";
-import { daysUntil, fmtDate, fmtMoney } from "@/lib/format";
+import { daysUntil, fmtDate, fmtMoney, TIME_ZONE } from "@/lib/format";
 import { renewalTone } from "@/lib/renewal";
 import { SUB_PLANS } from "@/lib/types";
 
@@ -25,7 +25,7 @@ function Stat({ icon, label, value, sub, accent }: { icon: ReactNode; label: str
 
 export default async function DashboardPage() {
   const d = await dashboardData();
-  const fecha = new Intl.DateTimeFormat("es-MX", { weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const fecha = new Intl.DateTimeFormat("es-MX", { weekday: "long", day: "numeric", month: "long", timeZone: TIME_ZONE }).format(new Date());
   const hoy = fecha.charAt(0).toUpperCase() + fecha.slice(1);
 
   return (

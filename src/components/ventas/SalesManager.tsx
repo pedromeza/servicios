@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 import { cancelPaymentLink, createPaymentLink, deleteSale, purgeSale, restoreSale } from "@/lib/actions";
-import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
+import { dateInZone, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import type { Page } from "@/lib/paging";
 import { SALE_KINDS, type LedgerMonth, type LedgerRow, type Option, type PaymentLink, type Sale } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
@@ -171,7 +171,7 @@ export function SalesManager({
                   <div className="truncate font-medium text-navy-900">{l.concept}</div>
                   <div className="text-xs text-slate-500">
                     {l.client_name ?? "Sin cliente"} · creado {fmtDateTime(l.created_at)}
-                    {l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : l.status === "pending" ? ` · ${isExpired(l) ? "venció" : "vence"} ${fmtDate(expiresAt(l).toISOString().slice(0, 10))}` : ""}
+                    {l.paid_at ? ` · pagado ${fmtDateTime(l.paid_at)}` : l.status === "pending" ? ` · ${isExpired(l) ? "venció" : "vence"} ${fmtDate(dateInZone(expiresAt(l)))}` : ""}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

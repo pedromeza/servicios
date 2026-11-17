@@ -3,6 +3,7 @@ import { SalesManager } from "@/components/ventas/SalesManager";
 import { clientOptions, ledgerByMonth, listPaymentLinks, listSales, pendingMigrations, salesLedger } from "@/lib/data";
 import { mpConfigured } from "@/lib/mercadopago";
 import { filterLedger } from "@/lib/ledger";
+import { todayISO } from "@/lib/format";
 import { paginate } from "@/lib/paging";
 
 export const metadata: Metadata = { title: "Ventas" };
@@ -16,7 +17,7 @@ export default async function VentasPage({ searchParams }: PageProps<"/ventas">)
   const months = ledgerByMonth(ledger);
   const filtered = filterLedger(ledger, filters);
   const { items, paging } = paginate(filtered, s(sp.page) || undefined, s(sp.por) || undefined);
-  const thisMonth = new Date().toISOString().slice(0, 7);
+  const thisMonth = todayISO().slice(0, 7);
   const yearRows = ledger.filter((r) => r.date.startsWith(thisMonth.slice(0, 4)));
   const totals = {
     count: filtered.length,
