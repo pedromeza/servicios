@@ -15,21 +15,24 @@ export function ImportManager() {
   const [preview, analyze, analyzing] = useActionState<MlPreviewState, FormData>(previewMlImport, null);
   const [result, commit, committing] = useActionState<MlImportResult | null, FormData>(commitMlImport, null);
   const [fileName, setFileName] = useState("");
+  const [includeSimilar, setIncludeSimilar] = useState(false);
 
   const rows = useMemo(() => (preview?.ok ? preview.rows : []), [preview]);
   const stats = useMemo(() => {
     const valid = rows.filter((r) => r.ok);
+    const similar = valid.filter((r) => !r.imported && r.similar).length;
     return {
       total: rows.length,
-      toCreate: valid.filter((r) => !r.imported).length,
+      toCreate: valid.filter((r) => !r.imported && (includeSimilar || !r.similar)).length,
       imported: valid.filter((r) => r.imported).length,
+      similar,
       invalid: rows.length - valid.length,
       noYears: valid.filter((r) => r.months === null && !r.imported).length,
       noSaleId: valid.filter((r) => !r.sale_id && !r.imported).length,
       newClients: new Set(valid.filter((r) => !r.imported && !r.client_exists).map((r) => r.buyer.toLowerCase())).size,
-      amount: valid.filter((r) => !r.imported).reduce((n, r) => n + r.unit_price * r.units, 0),
+      amount: valid.filter((r) => !r.imported && (includeSimilar || !r.similar)).reduce((n, r) => n + r.unit_price * r.units, 0),
     };
-  }, [rows]);
+  }, [rows, includeSimilar]);
 
   return (
     <>
@@ -62,10 +65,19 @@ export function ImportManager() {
         <Card className="mb-6">
           <CardHeader
             title="2. Revisa y confirma"
-            description={`${preview.format === "ml" ? "Reporte de Mercado Libre" : "Hoja de captura"} · ${stats.total} ventas en “${preview.sheet}” · ${stats.toCreate} por importar · ${stats.imported} ya importadas · ${stats.invalid} canceladas o reembolsadas (se omiten)`}
+            description={`${preview.format === "ml" ? "Reporte de Mercado Libre" : "Hoja de captura"} · ${stats.total} ventas en “${preview.sheet}” · ${stats.toCreate} por importar · ${stats.imported} ya importadas · ${stats.similar} ya registradas a mano · ${stats.invalid} canceladas o reembolsadas (se omiten)`}
           />
           <form action={commit} className="space-y-4 px-5 py-4">
             <input type="hidden" name="rows" value={JSON.stringify(rows)} />
+            {stats.similar > 0 && (
+              <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <input type="checkbox" name="include_similar" checked={includeSimilar} onChange={(ev) => setIncludeSimilar(ev.target.checked)} className="mt-0.5 accent-brand" />
+                <span>
+                  <strong>{stats.similar} venta{stats.similar === 1 ? "" : "s"} parece{stats.similar === 1 ? "" : "n"} ya registrada{stats.similar === 1 ? "" : "s"} a mano</strong> (mismo cliente, misma fecha de compra y mismo
+                  programa). Se omiten para no duplicar. Marca esta casilla solo si quieres importarlas de todos modos.
+                </span>
+              </label>
+            )}
             {preview.migrationPending && (
               <p className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
                 <AlertTriangle size={16} className="mt-0.5 shrink-0" /> Falta aplicar la migración 0010 (columna ml_sale_id). Hasta entonces no se puede importar sin riesgo de duplicar.
@@ -100,6 +112,7 @@ export function ImportManager() {
                   <p className="flex items-center gap-1.5">
                     <CheckCircle2 size={15} /> Importadas {result.created} suscripciones y {result.clients_created} clientes nuevos en “{result.account_label}”.{" "}
                     {result.skipped_imported > 0 ? `${result.skipped_imported} ya existían. ` : ""}
+                    {result.skipped_similar > 0 ? `${result.skipped_similar} omitidas por estar registradas a mano. ` : ""}
                     {result.skipped_invalid > 0 ? `${result.skipped_invalid} omitidas por cancelación o reembolso.` : ""}
                   </p>
                 ) : (
@@ -131,7 +144,7 @@ export function ImportManager() {
             </thead>
             <tbody className="divide-y divide-navy-100">
               {rows.map((r) => (
-                <tr key={r.sale_id} className={!r.ok ? "bg-red-50/40 text-slate-400" : r.imported ? "text-slate-400" : ""}>
+                <tr key={r.sale_id || `${r.buyer}-${r.date}-${r.title}`} className={!r.ok ? "bg-red-50/40 text-slate-400" : r.imported || (r.similar && !includeSimilar) ? "text-slate-400" : ""}>
                   <Td className="whitespace-nowrap">{fmtDate(r.date)}</Td>
                   <Td>
                     <div className={r.ok && !r.imported ? "font-medium text-navy-900" : ""}>{r.buyer}</div>
@@ -152,7 +165,17 @@ export function ImportManager() {
                   <Td className="whitespace-nowrap">{r.renews_at ? fmtDate(r.renews_at) : r.date && (r.months ?? 12) > 0 ? fmtDate(addMonthsISO(r.date, r.months ?? 12)) : "—"}</Td>
                   <Td className="whitespace-nowrap text-right">{fmtMoney(r.unit_price * r.units)}{r.units > 1 ? ` (${r.units} u.)` : ""}</Td>
                   <Td>
-                    {!r.ok ? <Badge tone="danger">{r.status}</Badge> : r.imported ? <Badge>Ya importada</Badge> : <Badge tone="success">Se importará</Badge>}
+                    {!r.ok ? (
+                      <Badge tone="danger">{r.status}</Badge>
+                    ) : r.imported ? (
+                      <Badge>Ya importada</Badge>
+                    ) : r.similar && !includeSimilar ? (
+                      <span title={r.similar}>
+                        <Badge tone="warning">Ya existe (a mano)</Badge>
+                      </span>
+                    ) : (
+                      <Badge tone="success">Se importará</Badge>
+                    )}
                   </Td>
                 </tr>
               ))}

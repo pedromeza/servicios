@@ -754,7 +754,48 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
 }
 
 // ---------------------------------------------------------------- Importar Mercado Libre
-export type MlPreviewRow = MlSale & { imported: boolean; client_exists: boolean };
+export type MlPreviewRow = MlSale & { imported: boolean; client_exists: boolean; similar: string | null };
+
+/** Suscripciones existentes para detectar duplicados de ventas capturadas a mano (sin # de venta). */
+type ExistingSub = { client: string; purchased_at: string | null; products: string[]; ml_sale_id: string | null };
+
+type ExistingSubRow = { purchased_at: string | null; products: string[] | null; ml_sale_id?: string | null; deleted_at?: string | null; client: { name: string } | { name: string }[] | null };
+const clientName = (c: ExistingSubRow["client"]) => (Array.isArray(c) ? c[0]?.name : c?.name) ?? "";
+
+async function loadExistingSubs(supabase: Db): Promise<ExistingSub[]> {
+  const res = await supabase.from("subscriptions").select("purchased_at,products,ml_sale_id,deleted_at,client:clients(name)");
+  if (res.error) {
+    if (/ml_sale_id|schema cache/i.test(res.error.message)) {
+      const old = await supabase.from("subscriptions").select("purchased_at,products,client:clients(name)");
+      return ((old.data ?? []) as unknown as ExistingSubRow[]).map((r) => ({ client: clientName(r.client), purchased_at: r.purchased_at, products: r.products ?? [], ml_sale_id: null }));
+    }
+    return [];
+  }
+  return ((res.data ?? []) as unknown as ExistingSubRow[])
+    .filter((r) => !r.deleted_at)
+    .map((r) => ({ client: clientName(r.client), purchased_at: r.purchased_at, products: r.products ?? [], ml_sale_id: r.ml_sale_id ?? null }));
+}
+
+const dayDiff = (a: string, b: string) => Math.abs((new Date(a).getTime() - new Date(b).getTime()) / 86_400_000);
+const productKey = (p: string) => normalizeName(p).replace(/\s*\(.*\)\s*/g, "").replace(/sin especificar|no especifica programa/g, "").trim();
+
+/**
+ * Busca una suscripción ya registrada que parezca la misma venta: mismo cliente (sin acentos ni mayúsculas),
+ * compra con 3 días de diferencia como mucho y algún programa en común (o programa "Autodesk" genérico).
+ */
+function findSimilar(sale: { buyer: string; date: string | null; products: string[] }, existing: ExistingSub[]): string | null {
+  if (!sale.date) return null;
+  const buyer = normalizeName(sale.buyer);
+  const mine = sale.products.map(productKey);
+  for (const e of existing) {
+    if (!e.purchased_at || normalizeName(e.client) !== buyer) continue;
+    if (dayDiff(e.purchased_at, sale.date) > 3) continue;
+    const theirs = e.products.map(productKey);
+    const generic = mine.some((p) => p === "autodesk" || p === "") || theirs.some((p) => p === "autodesk" || p === "");
+    if (generic || mine.some((p) => theirs.includes(p))) return `${e.client} · ${e.products.join(", ") || "suscripción"} · ${e.purchased_at}`;
+  }
+  return null;
+}
 export type MlPreviewState =
   | { ok: true; rows: MlPreviewRow[]; sheet: string; format: "ml" | "simple"; accounts: { value: string; label: string }[]; migrationPending: boolean }
   | { ok: false; error: string }
@@ -772,15 +813,25 @@ export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Prom
     const { supabase } = await requireUser();
     const buf = await readUpload(fd);
     const { sales, sheet, format } = await parseMlWorkbook(buf);
-    const [existing, clients, accounts] = await Promise.all([
+    const [existing, clients, accounts, existingSubs] = await Promise.all([
       supabase.from("subscriptions").select("ml_sale_id").not("ml_sale_id", "is", null),
       supabase.from("clients").select("name"),
       supabase.from("accounts").select("id,label,provider,username_enc").order("provider").order("label"),
+      loadExistingSubs(supabase),
     ]);
     const migrationPending = Boolean(existing.error && /ml_sale_id|schema cache/i.test(existing.error.message));
     const imported = new Set(((existing.data ?? []) as { ml_sale_id: string }[]).map((r) => r.ml_sale_id));
     const names = new Set(((clients.data ?? []) as { name: string }[]).map((c) => normalizeName(c.name)));
-    const rows: MlPreviewRow[] = sales.map((s) => ({ ...s, imported: Boolean(s.sale_id) && imported.has(s.sale_id), client_exists: names.has(normalizeName(s.buyer)) }));
+    const rows: MlPreviewRow[] = sales.map((s) => {
+      const byId = Boolean(s.sale_id) && imported.has(s.sale_id);
+      return {
+        ...s,
+        imported: byId,
+        client_exists: names.has(normalizeName(s.buyer)),
+        // Capturadas a mano (sin # de venta en la base): se buscan por cliente + fecha + programa.
+        similar: byId ? null : findSimilar(s, existingSubs.filter((e) => !e.ml_sale_id || e.ml_sale_id !== s.sale_id)),
+      };
+    });
     return {
       ok: true,
       rows,
@@ -797,7 +848,16 @@ export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Prom
   }
 }
 
-export type MlImportResult = { ok: boolean; error?: string; created: number; clients_created: number; skipped_imported: number; skipped_invalid: number; account_label?: string };
+export type MlImportResult = {
+  ok: boolean;
+  error?: string;
+  created: number;
+  clients_created: number;
+  skipped_imported: number;
+  skipped_similar: number;
+  skipped_invalid: number;
+  account_label?: string;
+};
 
 const mlRowSchema = z.object({
   sale_id: z.string().regex(/^\d{6,}$/).or(z.literal("")),
@@ -819,7 +879,7 @@ const mlRowSchema = z.object({
 });
 
 export async function commitMlImport(_prev: MlImportResult | null, fd: FormData): Promise<MlImportResult> {
-  const base: MlImportResult = { ok: false, created: 0, clients_created: 0, skipped_imported: 0, skipped_invalid: 0 };
+  const base: MlImportResult = { ok: false, created: 0, clients_created: 0, skipped_imported: 0, skipped_similar: 0, skipped_invalid: 0 };
   let rows: z.infer<typeof mlRowSchema>[];
   try {
     rows = z.array(mlRowSchema).max(5000).parse(JSON.parse(str(fd, "rows") || "[]"));
@@ -827,6 +887,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
     return { ...base, error: "No pude leer las ventas de la vista previa. Vuelve a analizar el archivo." };
   }
   const accountChoice = str(fd, "account_id");
+  const includeSimilar = fd.get("include_similar") === "on";
   const { supabase } = await requireUser();
 
   // Cuenta destino: una existente o la cuenta "Ventas Mercado Libre" (se crea si no existe).
@@ -863,6 +924,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
   }
   const imported = new Set(((existing.data ?? []) as { ml_sale_id: string }[]).map((r) => r.ml_sale_id));
   const clientByName = new Map(((clientsRes.data ?? []) as { id: string; name: string }[]).map((c) => [normalizeName(c.name), c.id]));
+  const existingSubs = includeSimilar ? [] : await loadExistingSubs(supabase);
 
   const result = { ...base, ok: true, account_label: accountLabel };
   const today = todayISO();
@@ -873,6 +935,10 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
     }
     if (r.sale_id && imported.has(r.sale_id)) {
       result.skipped_imported += 1;
+      continue;
+    }
+    if (!includeSimilar && findSimilar(r, existingSubs)) {
+      result.skipped_similar += 1;
       continue;
     }
     // Cliente: existente por nombre, o nuevo con plataforma Mercado Libre.
