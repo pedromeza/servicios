@@ -9,6 +9,7 @@ import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import { LOYALTY } from "@/lib/loyalty";
 import { daysPhrase, fillTemplate, whatsappLink, type ReminderVars } from "@/lib/reminders";
 import { renewalTone } from "@/lib/renewal";
+import { productsText } from "@/lib/products";
 import { LICENSE_TERMS, SUB_PLANS, SUB_STATUS } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Detalle de cliente" };
@@ -22,7 +23,7 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
     if (!phone) return null;
     const vars: ReminderVars = {
       cliente: c.name,
-      programas: s.products.join(", ") || "tu programa",
+      programas: productsText(s.plan, s.products, s.account_provider) || "tu programa",
       fecha_compra: fmtDate(s.purchased_at),
       fecha_renovacion: fmtDate(s.renews_at),
       dias: daysPhrase(daysUntil(s.renews_at) ?? 0),
@@ -128,7 +129,9 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                     <div key={s.id} className={`rounded-xl border p-4 ${d !== null && d <= 30 ? "border-amber-200 bg-amber-50/60" : "border-navy-100 bg-navy-50/60"}`}>
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="font-semibold text-navy-900">{s.products.join(", ")}</div>
+                          <div className="font-semibold text-navy-900" title={s.products.join(", ")}>
+                            {productsText(s.plan, s.products, s.account_provider)}
+                          </div>
                           <div className="text-xs text-slate-500">
                             {s.seats} puesto{s.seats === 1 ? "" : "s"} · {s.account_label}
                           </div>
@@ -203,7 +206,9 @@ export default async function ClienteDetallePage({ params }: PageProps<"/cliente
                   return (
                     <tr key={s.id}>
                       <Td>
-                        <div className="text-slate-800">{s.products.join(", ")}</div>
+                        <div className="text-slate-800" title={s.products.join(", ")}>
+                          {productsText(s.plan, s.products, s.account_provider)}
+                        </div>
                         <div className="text-xs text-slate-400">
                           {SUB_PLANS[s.plan]} · {s.seats} puesto{s.seats === 1 ? "" : "s"}
                           {s.promo_months > 0 ? ` · +${s.promo_months} mes${s.promo_months === 1 ? "" : "es"} gratis` : ""}

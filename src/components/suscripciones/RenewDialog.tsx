@@ -66,7 +66,17 @@ export function RenewDialog({ subscription: s, onClose }: { subscription: Subscr
                   plan === k ? "border-brand bg-brand-light text-navy-900" : "border-slate-200 hover:bg-navy-50"
                 }`}
               >
-                <input type="radio" name="plan" value={k} checked={plan === k} onChange={() => setPlan(k)} className="accent-brand" />
+                <input
+                  type="radio"
+                  name="plan"
+                  value={k}
+                  checked={plan === k}
+                  onChange={() => {
+                    setPlan(k);
+                    if (k === "suite") setChecked(new Set(catalog));
+                  }}
+                  className="accent-brand"
+                />
                 {v}
               </label>
             ))}

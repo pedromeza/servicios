@@ -64,7 +64,23 @@ export function SubscriptionForm({
 
   const provider = (accounts.find((a) => a.value === accountId)?.meta ?? "Otro") as Provider;
   const catalog = useMemo(() => PRODUCTS_BY_PROVIDER[provider] ?? [], [provider]);
-  const extraProducts = (sub?.products ?? []).filter((p) => !catalog.includes(p));
+  const [checked, setChecked] = useState<Set<string>>(() => new Set(sub?.products ?? []));
+  const [extra, setExtra] = useState<string>(() => (sub?.products ?? []).filter((p) => !(PRODUCTS_BY_PROVIDER[(accounts.find((a) => a.value === (sub?.account_id ?? accounts[0]?.value ?? ""))?.meta ?? "Otro") as Provider] ?? []).includes(p)).join(", "));
+  const toggleProduct = (p: string) =>
+    setChecked((c) => {
+      const n = new Set(c);
+      if (n.has(p)) n.delete(p);
+      else n.add(p);
+      return n;
+    });
+  // Suite / colección completa = todos los programas del catálogo marcados.
+  const choosePlan = (k: string) => {
+    setPlan(k);
+    if (k === "suite") {
+      setChecked(new Set(catalog));
+      setExtra((x) => x.split(",").map((s) => s.trim()).filter((s) => s && !/sin especificar/i.test(s)).join(", "));
+    }
+  };
 
   return (
     <form action={action} className="space-y-4">
@@ -131,19 +147,19 @@ export function SubscriptionForm({
                 plan === k ? "border-brand bg-brand-light text-navy-900" : "border-slate-200 hover:bg-navy-50"
               }`}
             >
-              <input type="radio" name="plan" value={k} checked={plan === k} onChange={() => setPlan(k)} className="accent-brand" />
+              <input type="radio" name="plan" value={k} checked={plan === k} onChange={() => choosePlan(k)} className="accent-brand" />
               {v}
             </label>
           ))}
         </div>
       </Field>
 
-      <Field label="Programas incluidos" error={e.products}>
+      <Field label="Programas incluidos" error={e.products} hint={plan === "suite" ? "Suite completa: se marcan todos los programas del catálogo." : undefined}>
         {catalog.length > 0 ? (
           <div className="grid grid-cols-2 gap-1.5 rounded-lg border border-slate-200 p-3 sm:grid-cols-3">
             {catalog.map((p) => (
               <label key={p} className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" name="products" value={p} defaultChecked={sub?.products.includes(p)} className="accent-brand" />
+                <input type="checkbox" name="products" value={p} checked={checked.has(p)} onChange={() => toggleProduct(p)} className="accent-brand" />
                 {p}
               </label>
             ))}
@@ -151,7 +167,8 @@ export function SubscriptionForm({
         ) : null}
         <Input
           name="products_extra"
-          defaultValue={extraProducts.join(", ")}
+          value={extra}
+          onChange={(ev) => setExtra(ev.target.value)}
           placeholder={catalog.length ? "Otros programas, separados por coma" : "Programas, separados por coma"}
           className="mt-2"
         />

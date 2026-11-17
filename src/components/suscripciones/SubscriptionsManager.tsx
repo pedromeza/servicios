@@ -16,6 +16,7 @@ import { ConfirmDialog, Dialog } from "@/components/ui/Dialog";
 import { FilterBar } from "@/components/ui/FilterBar";
 import { Pagination } from "@/components/ui/Pagination";
 import type { Page } from "@/lib/paging";
+import { productsText } from "@/lib/products";
 import { SubscriptionForm } from "./SubscriptionForm";
 
 export function SubscriptionsManager({
@@ -157,7 +158,9 @@ export function SubscriptionsManager({
                       <div className="text-xs text-slate-400">{s.account_provider}</div>
                     </Td>
                     <Td>
-                      <div className="max-w-[220px] text-slate-800">{s.products.join(", ")}</div>
+                      <div className="max-w-[220px] text-slate-800" title={s.products.join(", ")}>
+                        {productsText(s.plan, s.products, s.account_provider)}
+                      </div>
                       <div className="text-xs text-slate-400">
                         {SUB_PLANS[s.plan]} · {s.seats} puesto{s.seats === 1 ? "" : "s"}
                       </div>
@@ -251,7 +254,7 @@ export function SubscriptionsManager({
         onClose={() => setDeleting(null)}
         pending={pending}
         title="Eliminar suscripción"
-        description={`La suscripción de ${deleting?.products.join(", ")} (${deleting?.account_label}) pasará a la papelera. Podrás restaurarla desde el filtro Estado → Eliminadas.`}
+        description={`La suscripción de ${deleting ? productsText(deleting.plan, deleting.products, deleting.account_provider) : ""} (${deleting?.account_label}) pasará a la papelera. Podrás restaurarla desde el filtro Estado → Eliminadas.`}
         onConfirm={() => {
           if (!deleting) return;
           start(async () => {
@@ -267,7 +270,7 @@ export function SubscriptionsManager({
         pending={pending}
         title="Eliminar definitivamente"
         confirmLabel="Borrar para siempre"
-        description={`Se borrará para siempre la suscripción de ${purging?.products.join(", ")} de ${purging?.client_name ?? "sin cliente"}. Esta acción no se puede deshacer.`}
+        description={`Se borrará para siempre la suscripción de ${purging ? productsText(purging.plan, purging.products, purging.account_provider) : ""} de ${purging?.client_name ?? "sin cliente"}. Esta acción no se puede deshacer.`}
         onConfirm={() => {
           if (!purging) return;
           start(async () => {

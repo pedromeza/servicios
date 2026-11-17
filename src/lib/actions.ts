@@ -11,13 +11,14 @@ import { decrypt, encrypt, keyHint } from "./crypto";
 import { addMonthsISO, addYearsISO, todayISO } from "./format";
 import { LOYALTY } from "./loyalty";
 import { normalizeName, sameName } from "./names";
+import { productsText } from "./products";
 import { splitEmails } from "./emails";
 import { parseMlWorkbook, type MlSale } from "./mercadolibre";
 import { sendEmail } from "./email";
 import { daysPhrase, DEFAULT_REMINDER, parseAutoDays, reminderHtml, SAMPLE_VARS, type ReminderSettings, type ReminderVars } from "./reminders";
 import { fmtDate, fmtMoney } from "./format";
 import { getReminderSettings, renewalCandidates } from "./data";
-import { MAX_LICENSE_SEATS } from "./types";
+import { MAX_LICENSE_SEATS, PRODUCTS_BY_PROVIDER } from "./types";
 
 export type ActionState = { ok: boolean; error?: string; errors?: Record<string, string> } | null;
 
@@ -482,7 +483,7 @@ export async function markGenericAsSuite(): Promise<ActionState & { count?: numb
   if (res.error) return { ok: false, error: res.error.message };
   const ids = ((res.data ?? []) as { id: string; products: string[] | null }[]).filter((r) => isGenericOnly(r.products ?? [])).map((r) => r.id);
   if (ids.length === 0) return { ok: true, count: 0 };
-  const upd = await supabase.from("subscriptions").update({ plan: "suite" }).in("id", ids);
+  const upd = await supabase.from("subscriptions").update({ plan: "suite", products: PRODUCTS_BY_PROVIDER.Autodesk }).in("id", ids);
   if (upd.error) return { ok: false, error: upd.error.message };
   await audit(supabase, "update", "subscription", null, `${ids.length} suscripciones “${GENERIC_PRODUCT}” marcadas como suite completa`);
   refresh();
@@ -751,7 +752,7 @@ export async function sendReminders(subscriptionIds: string[]): Promise<{ result
     }
     const vars: ReminderVars = {
       cliente: c.client_name,
-      programas: c.products.join(", ") || "tu programa",
+      programas: productsText(c.plan, c.products, c.provider) || "tu programa",
       fecha_compra: fmtDate(c.purchased_at),
       fecha_renovacion: fmtDate(c.renews_at),
       dias: daysPhrase(c.days),
@@ -1022,7 +1023,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
       client_id: clientId,
       // Sin programa específico = suite completa (así se venden en Mercado Libre).
       plan: isGenericOnly(r.products) ? "suite" : "individual",
-      products: r.products,
+      products: isGenericOnly(r.products) ? PRODUCTS_BY_PROVIDER.Autodesk : r.products,
       purchased_at: purchased,
       cost: 0,
       price: Math.round(r.unit_price * r.units * 100) / 100,

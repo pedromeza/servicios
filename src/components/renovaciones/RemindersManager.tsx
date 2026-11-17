@@ -8,6 +8,7 @@ import type { EmailProvider } from "@/lib/email";
 import { fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
 import { daysPhrase, fillTemplate, whatsappLink, type ReminderSettings, type ReminderVars } from "@/lib/reminders";
 import { renewalTone } from "@/lib/renewal";
+import { productsText } from "@/lib/products";
 import type { ReminderCandidate } from "@/lib/types";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -46,7 +47,7 @@ export function RemindersManager({
     if (!c.phone) return null;
     const vars: ReminderVars = {
       cliente: c.client_name,
-      programas: c.products.join(", ") || "tu programa",
+      programas: productsText(c.plan, c.products, c.provider) || "tu programa",
       fecha_compra: fmtDate(c.purchased_at),
       fecha_renovacion: fmtDate(c.renews_at),
       dias: daysPhrase(c.days),
@@ -199,7 +200,9 @@ export function RemindersManager({
                         </span>
                       )}
                     </Td>
-                    <Td className="max-w-[200px] text-slate-800">{c.products.join(", ")}</Td>
+                    <Td className="max-w-[200px] text-slate-800">
+                      <span title={c.products.join(", ")}>{productsText(c.plan, c.products, c.provider)}</span>
+                    </Td>
                     <Td className="whitespace-nowrap">{fmtDate(c.purchased_at)}</Td>
                     <Td>
                       <div className="whitespace-nowrap text-slate-800">{fmtDate(c.renews_at)}</div>

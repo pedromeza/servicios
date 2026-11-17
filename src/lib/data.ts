@@ -484,6 +484,8 @@ export async function renewalCandidates(days: number): Promise<ReminderCandidate
         platform: c?.platform ?? null,
         emails: s.emails.length > 0 ? s.emails : fromContact ? [fromContact] : [],
         phone: whatsappNumber(contact),
+        plan: s.plan,
+        provider: s.account_provider,
         products: s.products,
         purchased_at: s.purchased_at,
         renews_at: s.renews_at as string,

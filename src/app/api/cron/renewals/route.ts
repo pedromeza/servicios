@@ -5,6 +5,7 @@ import { decrypt, encrypt } from "@/lib/crypto";
 import { sendEmail, sendRenewalEmail, type RenewalItem } from "@/lib/email";
 import { splitEmails } from "@/lib/emails";
 import { addDaysISO, daysUntil, fmtDate, fmtMoney, todayISO } from "@/lib/format";
+import { productsText } from "@/lib/products";
 import { daysPhrase, DEFAULT_REMINDER, fillTemplate, parseAutoDays, reminderHtml, whatsappLink, whatsappNumber, type ReminderSettings, type ReminderVars } from "@/lib/reminders";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -57,7 +58,7 @@ async function sendAutomaticReminders(supabase: ReturnType<typeof createAdminCli
     const [subs, recent] = await Promise.all([
       supabase
         .from("subscriptions")
-        .select("id,products,purchased_at,renews_at,price,currency,email_enc,client:clients(name,contact_enc,platform)")
+        .select("id,plan,products,purchased_at,renews_at,price,currency,email_enc,client:clients(name,contact_enc,platform),account:accounts(provider)")
         .eq("user_id", row.user_id)
         .eq("status", "active")
         .is("deleted_at", null)
@@ -93,7 +94,7 @@ async function sendAutomaticReminders(supabase: ReturnType<typeof createAdminCli
       const products: string[] = s.products ?? [];
       const vars: ReminderVars = {
         cliente: s.client?.name ?? "cliente",
-        programas: products.join(", ") || "tu programa",
+        programas: productsText(s.plan ?? "individual", products, (Array.isArray(s.account) ? s.account[0] : s.account)?.provider) || "tu programa",
         fecha_compra: fmtDate(s.purchased_at),
         fecha_renovacion: fmtDate(s.renews_at),
         dias: daysPhrase(d),
