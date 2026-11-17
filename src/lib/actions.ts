@@ -471,6 +471,24 @@ export async function setSubscriptionStatus(id: string, status: "active" | "expi
   return { ok: true };
 }
 
+/** Programa genérico que deja el importador cuando la venta no dice qué programa es. */
+export const GENERIC_PRODUCT = "Autodesk (sin especificar)";
+const isGenericOnly = (products: string[]) => products.length === 1 && /sin especificar/i.test(products[0]);
+
+/** Marca como suite completa todas las suscripciones activas que solo tienen el programa genérico. */
+export async function markGenericAsSuite(): Promise<ActionState & { count?: number }> {
+  const { supabase } = await requireUser();
+  const res = await supabase.from("subscriptions").select("id,products").eq("plan", "individual").is("deleted_at", null).contains("products", [GENERIC_PRODUCT]);
+  if (res.error) return { ok: false, error: res.error.message };
+  const ids = ((res.data ?? []) as { id: string; products: string[] | null }[]).filter((r) => isGenericOnly(r.products ?? [])).map((r) => r.id);
+  if (ids.length === 0) return { ok: true, count: 0 };
+  const upd = await supabase.from("subscriptions").update({ plan: "suite" }).in("id", ids);
+  if (upd.error) return { ok: false, error: upd.error.message };
+  await audit(supabase, "update", "subscription", null, `${ids.length} suscripciones “${GENERIC_PRODUCT}” marcadas como suite completa`);
+  refresh();
+  return { ok: true, count: ids.length };
+}
+
 // ---------------------------------------------------------------- Licencias
 const seatSchema = z.object({
   email: z.email("Correo inválido").max(200).or(z.literal("")),
@@ -1002,7 +1020,8 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
     const ins = await supabase.from("subscriptions").insert({
       account_id: accountId,
       client_id: clientId,
-      plan: "individual",
+      // Sin programa específico = suite completa (así se venden en Mercado Libre).
+      plan: isGenericOnly(r.products) ? "suite" : "individual",
       products: r.products,
       purchased_at: purchased,
       cost: 0,

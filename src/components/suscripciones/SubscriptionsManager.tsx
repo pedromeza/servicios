@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, Pencil, Plus, RefreshCw, Trash2, Undo2 } from "lucide-react";
+import { AlertTriangle, Layers, Pencil, Plus, RefreshCw, Trash2, Undo2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
-import { deleteSubscription, purgeSubscription, restoreSubscription, setSubscriptionStatus } from "@/lib/actions";
+import { deleteSubscription, markGenericAsSuite, purgeSubscription, restoreSubscription, setSubscriptionStatus } from "@/lib/actions";
 import type { RenewalMoney } from "@/lib/types";
 import { RenewDialog } from "./RenewDialog";
 import { daysUntil, fmtDate, fmtDateTime, fmtMoney } from "@/lib/format";
@@ -25,6 +25,7 @@ export function SubscriptionsManager({
   money,
   accounts,
   clients,
+  genericCount = 0,
 }: {
   subscriptions: Subscription[];
   paging: Page;
@@ -32,7 +33,10 @@ export function SubscriptionsManager({
   money: RenewalMoney;
   accounts: Option[];
   clients: Option[];
+  /** Suscripciones activas con solo “Autodesk (sin especificar)” como producto individual. */
+  genericCount?: number;
 }) {
+  const [bulkSuite, setBulkSuite] = useState(false);
   const [editing, setEditing] = useState<Subscription | "new" | null>(null);
   const [deleting, setDeleting] = useState<Subscription | null>(null);
   const [renewing, setRenewing] = useState<Subscription | null>(null);
@@ -67,6 +71,36 @@ export function SubscriptionsManager({
             options: [...Object.entries(SUB_STATUS).map(([k, v]) => ({ value: k, label: v })), { value: "deleted", label: "Eliminadas (papelera)" }],
           },
         ]}
+      />
+      {genericCount > 0 && !inTrash && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <span className="flex items-center gap-2">
+            <Layers size={16} className="shrink-0" />
+            <span>
+              <strong>{genericCount} suscripci{genericCount === 1 ? "ón" : "ones"}</strong> tiene{genericCount === 1 ? "" : "n"} “Autodesk (sin especificar)” como producto individual. Si lo que vendes en Mercado Libre es la suite completa, márcalas todas de una vez.
+            </span>
+          </span>
+          <Button variant="secondary" onClick={() => setBulkSuite(true)} disabled={pending}>
+            Marcar {genericCount === 1 ? "la" : `las ${genericCount}`} como suite completa
+          </Button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={bulkSuite}
+        onClose={() => setBulkSuite(false)}
+        pending={pending}
+        tone="primary"
+        title="Marcar como suite completa"
+        confirmLabel="Sí, marcar todas"
+        pendingLabel="Marcando…"
+        description={`${genericCount} suscripci${genericCount === 1 ? "ón" : "ones"} con “Autodesk (sin especificar)” pasarán de producto individual a suite / colección completa. El programa y lo demás no cambian; puedes editarlas después una por una.`}
+        onConfirm={() =>
+          start(async () => {
+            const res = await markGenericAsSuite();
+            if (!res.ok && res.error) window.alert(res.error);
+            setBulkSuite(false);
+          })
+        }
       />
       <Card>
         {subscriptions.length === 0 ? (

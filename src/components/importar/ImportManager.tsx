@@ -240,7 +240,7 @@ export function ImportManager() {
                   {stats.newClients === 1 ? "" : "s"} nuevo{stats.newClients === 1 ? "" : "s"} (los demás ya existen y se reutilizan).
                 </p>
                 <p className="mt-1">
-                  Precio = precio unitario × puestos. Los correos de la columna Correo quedan en la suscripción. Renovación = la de la hoja o compra + vigencia
+                  Precio = precio unitario × puestos. Las ventas sin programa específico entran como suite completa. Los correos de la columna Correo quedan en la suscripción. Renovación = la de la hoja o compra + vigencia
                   {stats.noYears > 0 ? ` (${stats.noYears} sin vigencia: se asume 1 año)` : ""}. Las que ya vencieron entran como vencidas.
                   {stats.noSaleId > 0 ? ` ${stats.noSaleId} sin # de venta: no se puede detectar si ya estaban; revisa que no se dupliquen.` : ""}
                 </p>
