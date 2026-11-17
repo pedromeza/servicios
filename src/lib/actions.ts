@@ -814,8 +814,9 @@ function findSimilar(sale: { sale_id: string; buyer: string; date: string | null
   }
   return null;
 }
+export type MlPriceRef = { product: string; term_months: number; price: number; currency: string };
 export type MlPreviewState =
-  | { ok: true; rows: MlPreviewRow[]; sheet: string; format: "ml" | "simple"; accounts: { value: string; label: string }[]; migrationPending: boolean }
+  | { ok: true; rows: MlPreviewRow[]; sheet: string; format: "ml" | "simple"; accounts: { value: string; label: string }[]; prices: MlPriceRef[]; migrationPending: boolean }
   | { ok: false; error: string }
   | null;
 
@@ -831,12 +832,17 @@ export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Prom
     const { supabase } = await requireUser();
     const buf = await readUpload(fd);
     const { sales, sheet, format } = await parseMlWorkbook(buf);
-    const [existing, clients, accounts, known] = await Promise.all([
+    const [existing, clients, accounts, known, priceRes] = await Promise.all([
       supabase.from("subscriptions").select("ml_sale_id").not("ml_sale_id", "is", null),
       supabase.from("clients").select("name").is("deleted_at", null),
       supabase.from("accounts").select("id,label,provider,username_enc").order("provider").order("label"),
       loadExisting(supabase),
+      supabase.from("price_list").select("product,term_months,term_years,price,currency,active"),
     ]);
+    // Lista de precios activa, para homologar lo que Mercado Libre descuenta.
+    const prices: MlPriceRef[] = ((priceRes.data ?? []) as { product: string; term_months: number | null; term_years: number | null; price: number; currency: string | null; active: boolean | null }[])
+      .filter((p) => p.active ?? true)
+      .map((p) => ({ product: p.product, term_months: Number(p.term_months ?? Number(p.term_years ?? 1) * 12), price: Number(p.price), currency: p.currency ?? "MXN" }));
     const migrationPending = Boolean(existing.error && /ml_sale_id|schema cache/i.test(existing.error.message));
     const imported = new Set(((existing.data ?? []) as { ml_sale_id: string }[]).map((r) => r.ml_sale_id));
     const names = ((clients.data ?? []) as { name: string }[]).map((c) => c.name);
@@ -855,6 +861,7 @@ export async function previewMlImport(_prev: MlPreviewState, fd: FormData): Prom
       rows,
       sheet,
       format,
+      prices,
       migrationPending,
       accounts: ((accounts.data ?? []) as { id: string; provider: string; label: string; username_enc: string | null }[]).map((a) => ({
         value: a.id,
@@ -892,6 +899,7 @@ const mlRowSchema = z.object({
   extra: z.string().max(1000),
   units: z.number().int().min(1).max(100),
   unit_price: z.number().min(0),
+  ml_unit_price: z.number().min(0).optional(), // precio original en ML cuando se homologó a lista
   gross: z.number(),
   fee: z.number(),
   net: z.number(),
@@ -986,6 +994,7 @@ export async function commitMlImport(_prev: MlImportResult | null, fd: FormData)
       r.gross || r.fee ? `Cobrado ${r.gross.toFixed(2)} · comisión ML ${r.fee.toFixed(2)} · neto ${r.net.toFixed(2)}` : "",
       r.months === null ? "Vigencia no indicada: se asumió 1 año." : "",
       !r.ok && r.status ? `Estado en Mercado Libre: ${r.status} (importada a mano).` : "",
+      r.ml_unit_price !== undefined && r.ml_unit_price !== r.unit_price ? `Precio en Mercado Libre: ${r.ml_unit_price.toFixed(2)} por unidad (homologado a ${r.unit_price.toFixed(2)}).` : "",
       r.extra,
     ]
       .filter(Boolean)
