@@ -569,7 +569,7 @@ export async function listAudit(limit = 50): Promise<AuditEntry[]> {
 // ---------------------------------------------------------------- Links de pago (Mercado Pago)
 export async function listPaymentLinks(limit = 50): Promise<PaymentLink[]> {
   const { supabase } = await requireUser();
-  const { data, error } = await supabase.from("payment_links").select("*, client:clients(id,name)").order("created_at", { ascending: false }).limit(limit);
+  const { data, error } = await supabase.from("payment_links").select("*, client:clients(id,name,contact_enc)").order("created_at", { ascending: false }).limit(limit);
   if (error) {
     if (isMissingSchema(error)) return [];
     fail(error);
@@ -579,6 +579,7 @@ export async function listPaymentLinks(limit = 50): Promise<PaymentLink[]> {
     subscription_id: r.subscription_id,
     client_id: r.client_id,
     client_name: r.client?.name ?? null,
+    phone: whatsappNumber(decrypt(r.client?.contact_enc)),
     concept: r.concept,
     amount: Number(r.amount ?? 0),
     currency: r.currency ?? "MXN",

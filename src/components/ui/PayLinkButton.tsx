@@ -81,16 +81,15 @@ export function PayLinkButton({
               Cuando el cliente pague, Mercado Pago avisa a la app y {subscriptionId ? "la renovación se registra sola con su nueva fecha" : "el cobro se registra solo en Ventas"}. El link sirve mientras no se cancele.
             </p>
             <div className="flex flex-wrap justify-end gap-2">
-              {phone && (
-                <a
-                  href={whatsappLink(phone, waText)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#25D366] px-4 text-sm font-medium text-white hover:bg-[#1ebe5d]"
-                >
-                  <MessageCircle size={15} /> Mandar por WhatsApp
-                </a>
-              )}
+              <a
+                href={phone ? whatsappLink(phone, waText) : `https://wa.me/?text=${encodeURIComponent(waText)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={phone ? "Mandar al WhatsApp del cliente" : "Abrir WhatsApp y elegir a quién mandarlo"}
+                className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#25D366] px-4 text-sm font-medium text-white hover:bg-[#1ebe5d]"
+              >
+                <MessageCircle size={15} /> Mandar por WhatsApp
+              </a>
               <a href={result.url} target="_blank" rel="noopener noreferrer" className="inline-flex h-10 items-center gap-2 rounded-lg border border-navy-200 bg-white px-4 text-sm font-medium text-navy-900 hover:bg-navy-50">
                 <ExternalLink size={15} /> Abrir
               </a>

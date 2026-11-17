@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, CreditCard, Download, ExternalLink, Pencil, Plus, ShoppingCart, Trash2, Undo2, X } from "lucide-react";
+import { Check, Copy, CreditCard, Download, ExternalLink, MessageCircle, Pencil, Plus, ShoppingCart, Trash2, Undo2, X } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
@@ -53,6 +53,12 @@ export function SalesManager({
   const [chargeError, setChargeError] = useState<string | null>(null);
   const [chargeUrl, setChargeUrl] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** WhatsApp con el link escrito: al número del cliente si lo tiene, o para elegir el contacto. */
+  const waHref = (l: { phone?: string | null; client_name?: string | null; concept: string; amount: number; currency?: string; url: string }) => {
+    const text = `Hola${l.client_name ? ` ${l.client_name}` : ""}, te saludamos de PGPM MEX. Aquí tienes tu link de pago (${l.concept}, ${fmtMoney(l.amount, l.currency ?? "MXN")}):\n${l.url}`;
+    return `https://wa.me/${l.phone ?? ""}?text=${encodeURIComponent(text)}`;
+  };
+  const [charged, setCharged] = useState<{ concept: string; amount: number; client_id: string } | null>(null);
   const copyUrl = async (id: string, url: string) => {
     try {
       await navigator.clipboard.writeText(url);
@@ -163,6 +169,18 @@ export function SalesManager({
                   <Badge tone={l.status === "paid" ? "success" : l.status === "pending" ? "warning" : "neutral"}>{l.status === "paid" ? "Pagado" : l.status === "pending" ? "Pendiente" : "Cancelado"}</Badge>
                   {l.status === "pending" && l.url && (
                     <>
+                      <a
+                        href={waHref({ ...l, url: l.url })}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title={l.phone ? "Mandar el link al WhatsApp del cliente" : "Abrir WhatsApp y elegir a quién mandarlo"}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg bg-[#25D366] px-2.5 text-xs font-medium text-white hover:bg-[#1ebe5d]"
+                      >
+                        <MessageCircle size={13} /> WhatsApp
+                      </a>
+                      <a href={l.url} target="_blank" rel="noopener noreferrer" aria-label="Abrir link" title="Abrir el link" className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-navy-700 hover:bg-navy-100/70">
+                        <ExternalLink size={15} />
+                      </a>
                       <Button size="sm" variant="secondary" onClick={() => copyUrl(l.id, l.url!)}>
                         {copiedId === l.id ? <Check size={13} /> : <Copy size={13} />} {copiedId === l.id ? "Copiado" : "Copiar"}
                       </Button>
@@ -187,7 +205,18 @@ export function SalesManager({
                 {copiedId === "new" ? <Check size={13} /> : <Copy size={13} />} {copiedId === "new" ? "Copiado" : "Copiar"}
               </Button>
             </div>
-            <div className="flex justify-end">
+            <p className="text-xs text-slate-500">Queda en la lista “Links de pago” de esta página, donde verás cuando pase a Pagado.</p>
+            <div className="flex flex-wrap justify-end gap-2">
+              {charged && (
+                <a
+                  href={waHref({ ...charged, url: chargeUrl, phone: links.find((l) => l.client_id === charged.client_id && l.phone)?.phone ?? null, client_name: clients.find((c) => c.value === charged.client_id)?.label ?? null })}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg bg-[#25D366] px-4 text-sm font-medium text-white hover:bg-[#1ebe5d]"
+                >
+                  <MessageCircle size={15} /> Mandar por WhatsApp
+                </a>
+              )}
               <Button onClick={() => setCharging(false)}>Listo</Button>
             </div>
           </div>
@@ -219,6 +248,7 @@ export function SalesManager({
                       return;
                     }
                     setChargeUrl(res.url);
+                    setCharged({ concept: chargeConcept.trim(), amount: Number(chargeAmount), client_id: chargeClient });
                     setChargeConcept("");
                     setChargeAmount("");
                   })

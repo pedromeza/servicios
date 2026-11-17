@@ -217,6 +217,7 @@ export type PaymentLink = {
   subscription_id: string | null;
   client_id: string | null;
   client_name: string | null;
+  phone: string | null; // WhatsApp del cliente, sacado de su contacto
   concept: string;
   amount: number;
   currency: string;

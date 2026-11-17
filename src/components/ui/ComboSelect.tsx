@@ -45,6 +45,24 @@ export function ComboSelect({
   const root = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
+  // La lista flota con posición fija sobre la página: así no agranda ni desplaza el diálogo que la contiene.
+  const [pos, setPos] = useState<{ left: number; width: number; top?: number; bottom?: number; maxList: number } | null>(null);
+  const place = () => {
+    const el = root.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 12;
+    const above = r.top - 12;
+    const SEARCH = 48; // alto de la fila de búsqueda
+    const openUp = below < 220 && above > below;
+    const room = Math.max(120, (openUp ? above : below) - SEARCH);
+    setPos({
+      left: Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8)),
+      width: r.width,
+      ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }),
+      maxList: Math.min(256, room),
+    });
+  };
 
   const selected = options.find((o) => o.value === value) ?? null;
   const filtered = useMemo(() => {
@@ -65,17 +83,29 @@ export function ComboSelect({
     const onDown = (e: MouseEvent) => {
       if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
     };
+    // Si la página o el diálogo se desplazan o cambian de tamaño, la lista sigue al campo.
+    const onMove = (e: Event) => {
+      if (e.target instanceof Node && root.current?.contains(e.target)) return; // desplazamiento dentro de la propia lista
+      place();
+    };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    window.addEventListener("resize", onMove);
+    window.addEventListener("scroll", onMove, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("scroll", onMove, true);
+    };
   }, [open]);
 
   const openList = () => {
     if (disabled) return;
+    place();
     setOpen(true);
     setQuery("");
     setHighlight(0);
     setError(null);
-    setTimeout(() => input.current?.focus(), 0);
+    setTimeout(() => input.current?.focus({ preventScroll: true }), 0);
   };
   const choose = (v: string) => {
     onChange(v);
@@ -116,8 +146,11 @@ export function ComboSelect({
         <ChevronDown size={16} className="shrink-0 text-slate-400" />
       </button>
 
-      {open && (
-        <div className="absolute z-30 mt-1 w-full overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl">
+      {open && pos && (
+        <div
+          className="fixed z-[70] overflow-hidden rounded-lg border border-slate-200 bg-white shadow-xl"
+          style={{ left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom }}
+        >
           <div className="flex items-center gap-2 border-b border-slate-100 px-3">
             <Search size={14} className="shrink-0 text-slate-400" />
             <input
@@ -152,7 +185,7 @@ export function ComboSelect({
               </button>
             )}
           </div>
-          <ul id={listId} role="listbox" className="max-h-64 overflow-y-auto py-1 text-sm">
+          <ul id={listId} role="listbox" className="overflow-y-auto py-1 text-sm" style={{ maxHeight: pos.maxList }}>
             {rows.length === 0 && <li className="px-3 py-2 text-slate-400">Sin resultados.</li>}
             {rows.map((row, i) => {
               const active = i === highlight;
