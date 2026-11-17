@@ -472,7 +472,7 @@ export async function setSubscriptionStatus(id: string, status: "active" | "expi
 }
 
 /** Programa genérico que deja el importador cuando la venta no dice qué programa es. */
-export const GENERIC_PRODUCT = "Autodesk (sin especificar)";
+const GENERIC_PRODUCT = "Autodesk (sin especificar)";
 const isGenericOnly = (products: string[]) => products.length === 1 && /sin especificar/i.test(products[0]);
 
 /** Marca como suite completa todas las suscripciones activas que solo tienen el programa genérico. */
